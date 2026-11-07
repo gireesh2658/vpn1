@@ -1,0 +1,48 @@
+# Build and Bytecode
+target/
+bin/
+*.class
+*.jar
+*.war
+*.ear
+
+# Databases & Runtime State
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+office_vpn.db
+
+# Secrets & Local Runtime Keys
+audit.key
+audit.head
+server_identity.key
+known_gateways.properties*
+client_trusted_fingerprints.properties
+*.p12
+*.jks
+server_vaults/
+
+# Logs and Temporaries
+*.log
+*.tmp
+*.bak
+hs_err*
+
+# IDE and Editor Metadata
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+.metadata/
+
+# OS Noise
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
+
+screenshots/
