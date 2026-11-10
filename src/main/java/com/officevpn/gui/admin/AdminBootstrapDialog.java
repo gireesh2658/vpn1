@@ -3,6 +3,7 @@ package com.officevpn.gui.admin;
 import com.officevpn.admin.AdminBootstrap;
 import com.officevpn.admin.PasswordPolicy;
 import com.officevpn.admin.UsernamePolicy;
+import com.officevpn.config.Messages;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.gui.UiSafe;
 import com.officevpn.model.UserAccount;
@@ -42,13 +43,13 @@ public final class AdminBootstrapDialog {
         } else {
             stage.initModality(Modality.APPLICATION_MODAL);
         }
-        stage.setTitle("Office VPN — Initial Administrator Setup");
+        stage.setTitle(Messages.get("app.title.admin.bootstrap"));
         stage.setResizable(false);
 
-        Label header = new Label("First-Run Headquarters Bootstrap");
+        Label header = new Label(Messages.get("admin.bootstrap.header"));
         header.getStyleClass().add("page-title");
 
-        Label sub = new Label("No active Headquarters Administrator exists in MySQL. Create the root governance account to initialize the gateway.");
+        Label sub = new Label(Messages.get("admin.bootstrap.sub"));
         sub.getStyleClass().add("page-subtitle");
         sub.setWrapText(true);
 
@@ -73,18 +74,18 @@ public final class AdminBootstrapDialog {
 
         passField.textProperty().addListener((obs, o, n) -> updateStrength(n, strengthBar, strengthLabel));
 
-        Button cancelBtn = new Button("Exit");
-        cancelBtn.getStyleClass().add("btn-secondary");
+        Button cancelButton = new Button(Messages.get("common.exit"));
+        cancelButton.getStyleClass().add("btn-secondary");
 
-        Button createBtn = new Button("Create Administrator");
-        createBtn.getStyleClass().add("btn-primary");
-        createBtn.setDefaultButton(true);
+        Button createAdminButton = new Button(Messages.get("admin.bootstrap.button.create"));
+        createAdminButton.getStyleClass().add("btn-primary");
+        createAdminButton.setDefaultButton(true);
 
         final UserAccount[] createdRef = new UserAccount[1];
 
-        cancelBtn.setOnAction(e -> stage.close());
+        cancelButton.setOnAction(e -> stage.close());
 
-        createBtn.setOnAction(e -> {
+        createAdminButton.setOnAction(e -> {
             String uname = userField.getText() != null ? userField.getText().trim() : "";
             char[] pw = passField.getText().toCharArray();
             char[] confirm = confirmField.getText().toCharArray();
@@ -94,7 +95,7 @@ public final class AdminBootstrapDialog {
                 UsernamePolicy.validateUsername(uname);
                 PasswordPolicy.validatePassword(pw, uname);
                 if (!Arrays.equals(pw, confirm)) {
-                    throw new IllegalArgumentException("Passphrases do not match.");
+                    throw new IllegalArgumentException("Passwords do not match.");
                 }
             } catch (IllegalArgumentException ex) {
                 Arrays.fill(pw, '\0');
@@ -103,9 +104,9 @@ public final class AdminBootstrapDialog {
                 return;
             }
 
-            createBtn.setDisable(true);
-            cancelBtn.setDisable(true);
-            createBtn.setText("Provisioning (PBKDF2)...");
+            createAdminButton.setDisable(true);
+            cancelButton.setDisable(true);
+            createAdminButton.setText("Provisioning (PBKDF2)...");
 
             CompletableFuture.supplyAsync(() -> {
                 try {
@@ -115,9 +116,9 @@ public final class AdminBootstrapDialog {
                     Arrays.fill(confirm, '\0');
                 }
             }).whenComplete((account, err) -> Platform.runLater(() -> {
-                createBtn.setDisable(false);
-                cancelBtn.setDisable(false);
-                createBtn.setText("Create Administrator");
+                createAdminButton.setDisable(false);
+                cancelButton.setDisable(false);
+                createAdminButton.setText(Messages.get("admin.bootstrap.button.create"));
                 if (err != null) {
                     Throwable cause = err.getCause() != null ? err.getCause() : err;
                     errorLabel.setText("Bootstrap failed: " + cause.getMessage());
@@ -131,13 +132,13 @@ public final class AdminBootstrapDialog {
         HBox actions = new HBox(10);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        actions.getChildren().addAll(spacer, cancelBtn, createBtn);
+        actions.getChildren().addAll(spacer, cancelButton, createAdminButton);
 
         VBox formCard = new VBox(10,
-                new Label("Administrator Username"), userField,
-                new Label("Master Passphrase"), passField,
+                new Label(Messages.get("admin.dialog.label.adminUsername")), userField,
+                new Label(Messages.get("admin.dialog.label.masterPassphrase")), passField,
                 strengthBar, strengthLabel,
-                new Label("Confirm Master Passphrase"), confirmField,
+                new Label(Messages.get("admin.dialog.label.confirmMasterPassphrase")), confirmField,
                 errorLabel
         );
         formCard.getStyleClass().add("card");

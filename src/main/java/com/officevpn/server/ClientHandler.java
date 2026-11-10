@@ -582,6 +582,7 @@ public final class ClientHandler implements Runnable, SessionHandle {
                     case FILE_DOWNLOAD_REQ -> handleFileDownload(packet, reqId);
                     case FILE_UPLOAD -> handleFileUpload(packet, plainPayload, reqId);
                     case CHAT_MESSAGE -> handleChatMessage(plainPayload);
+                    case CHANGE_PASSWORD -> handleChangePassword(plainPayload, reqId);
                     case PING -> handlePing(reqId);
                     case DISCONNECT -> {
                         running = false;
@@ -694,6 +695,40 @@ public final class ClientHandler implements Runnable, SessionHandle {
 
         server.log("[CHAT] [" + user.department() + "] " + user.username() + ": " + message);
         server.broadcastChatMessage(user.username(), user.department().name(), session.getAssignedVirtualIp(), message);
+    }
+
+    private void handleChangePassword(byte[] payloadBytes, long reqId) throws IOException {
+        UserAccount user = session.getAuthenticatedUser();
+        if (payloadBytes == null || payloadBytes.length == 0 || payloadBytes.length > 4096) {
+            sendEncryptedErrorCode("E_BAD_REQUEST", "Invalid password update payload", reqId);
+            return;
+        }
+        char[] currentPw = null;
+        char[] newPw = null;
+        try (DataInputStream dis = new DataInputStream(new ByteArrayInputStream(payloadBytes))) {
+            currentPw = dis.readUTF().toCharArray();
+            newPw = dis.readUTF().toCharArray();
+            boolean changed = server.getDatabaseManager().changeOwnPassword(
+                    user.username(), currentPw, newPw, getRemoteHost());
+            if (!changed) {
+                sendEncryptedErrorCode("E_AUTH_FAILED", "Current password verification failed", reqId);
+                return;
+            }
+            Map<String, String> meta = new LinkedHashMap<>();
+            meta.put("status", "OK");
+            if (reqId >= 0) {
+                meta.put("reqId", String.valueOf(reqId));
+            }
+            meta.put("seqNum", String.valueOf(session.getNextServerSendSeq()));
+            VpnPacket ack = encryptServerPacket(PacketType.CHANGE_PASSWORD, meta, new byte[0]);
+            sendPacketDirect(ack);
+        } catch (IllegalArgumentException ex) {
+            sendEncryptedErrorCode("E_VALIDATION", ex.getMessage(), reqId);
+        } finally {
+            if (currentPw != null) Arrays.fill(currentPw, '\0');
+            if (newPw != null) Arrays.fill(newPw, '\0');
+            Arrays.fill(payloadBytes, (byte) 0);
+        }
     }
 
     private void handlePing(long reqId) throws IOException {

@@ -7,6 +7,7 @@ import com.officevpn.config.ConfigUtil;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.model.AuditVerifyResult;
 import com.officevpn.model.UserAccount;
+import com.officevpn.protocol.VpnPacket;
 import com.officevpn.security.KillSwitchManager;
 import com.officevpn.security.TrustedFingerprintStore;
 import com.officevpn.server.VpnGatewayServer;
@@ -16,6 +17,9 @@ import com.officevpn.ui.service.VpnModels.*;
 import com.officevpn.util.HardwareUtil;
 import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.DoubleProperty;
+import javafx.beans.property.IntegerProperty;
+import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.ReadOnlyBooleanProperty;
 import javafx.beans.property.ReadOnlyDoubleProperty;
 import javafx.beans.property.ReadOnlyIntegerProperty;
@@ -23,6 +27,8 @@ import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.ReadOnlyStringProperty;
 import javafx.beans.property.StringProperty;
 import javafx.collections.ObservableList;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -30,6 +36,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -49,11 +56,13 @@ import java.util.concurrent.Executors;
  */
 public final class BackendVpnServiceAdapter implements VpnClientService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(BackendVpnServiceAdapter.class);
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm")
             .withZone(ZoneId.systemDefault());
 
     private final MockVpnService delegate;
     private final VpnClientEngine engine;
+    private final boolean ownsEngine;
     private final TrustedFingerprintStore fingerprintStore;
     private final DatabaseManager databaseManager;
     private final VpnGatewayServer gatewayServer;
@@ -61,7 +70,9 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     private final AuditService auditService;
     private final ExecutorService ioExecutor;
 
-    private volatile String activePassword = "";
+    private VpnClientEngine.ClientEventListener engineListener;
+    private KillSwitchManager.KillSwitchListener killSwitchListener;
+    private volatile char[] activePassword = new char[0];
     private volatile String activeOtp = "";
 
     public BackendVpnServiceAdapter(
@@ -70,7 +81,8 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
             DatabaseManager databaseManager,
             VpnGatewayServer gatewayServer
     ) {
-        this.engine = Objects.requireNonNull(engine, "VpnClientEngine cannot be null");
+        this.ownsEngine = (engine == null);
+        this.engine = (engine != null) ? engine : new VpnClientEngine();
         this.fingerprintStore = fingerprintStore != null ? fingerprintStore : new TrustedFingerprintStore();
         this.databaseManager = databaseManager;
         this.gatewayServer = gatewayServer;
@@ -78,7 +90,7 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 ? new MetricsCollector(databaseManager, gatewayServer)
                 : null;
         this.auditService = databaseManager != null ? new AuditService(databaseManager) : null;
-        this.delegate = new MockVpnService(false);
+        this.delegate = new MockVpnService(this.engine.isConnected() && this.engine.isAuthenticated());
         this.ioExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "ivory-backend-adapter");
             t.setDaemon(true);
@@ -87,9 +99,117 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
 
         bindPolicyBridges();
         syncGatewaysFromConfig();
+        syncEngineSnapshotToUi();
+        attachLiveEngineListeners();
         if (databaseManager != null && !databaseManager.isClosed()) {
             refreshAuditLog();
             syncRosterFromGateway();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void syncEngineSnapshotToUi() {
+        marshalFx(() -> {
+            if (engine.getUsername() != null && !engine.getUsername().isBlank()) {
+                String uname = engine.getUsername().trim();
+                String initials = uname.length() >= 2
+                        ? uname.substring(0, 2).toUpperCase(Locale.ROOT)
+                        : uname.toUpperCase(Locale.ROOT);
+                String deptName = engine.getDepartment() != null ? engine.getDepartment().name() : "Shared";
+                String roleName = engine.getRole() != null ? engine.getRole().name() : "EMPLOYEE";
+                List<String> allowedDepts = "HEADQUARTERS".equalsIgnoreCase(deptName)
+                        ? List.of("Finance", "Engineering", "HR", "Shared")
+                        : List.of(formatDeptLabel(deptName), "Shared");
+                EmployeeIdentity realId = new EmployeeIdentity(
+                        uname, uname, initials, roleName, formatDeptLabel(deptName),
+                        HardwareUtil.getAuthenticHardwareFingerprint(), allowedDepts);
+                if (delegate.currentIdentityProperty() instanceof ObjectProperty<?> op) {
+                    ((ObjectProperty<EmployeeIdentity>) op).set(realId);
+                }
+            }
+            if (engine.getAssignedVirtualIp() != null && !engine.getAssignedVirtualIp().isBlank()
+                    && !"0.0.0.0".equals(engine.getAssignedVirtualIp())) {
+                setStringProp(delegate.virtualIpProperty(), engine.getAssignedVirtualIp());
+            }
+            if (engine.getKillSwitchManager() != null) {
+                KillSwitchManager.State ksState = engine.getKillSwitchManager().getState();
+                delegate.killSwitchEnabledProperty().set(ksState != KillSwitchManager.State.DISABLED);
+                if (ksState == KillSwitchManager.State.BLOCKING) {
+                    setConnectionState(ConnectionState.BLOCKED_BY_KILL_SWITCH,
+                            "Unexpected tunnel drop — non-VPN egress blocked by Kill Switch");
+                }
+            }
+            if (engine.getTunnelManager() != null) {
+                TunnelManager.TunnelMode tmMode = engine.getTunnelManager().getMode();
+                String targetId = (tmMode == TunnelManager.TunnelMode.FULL) ? "mode-full" : "mode-split";
+                delegate.activateWorkMode(targetId);
+            }
+            if (engine.getAutoReconnectManager() != null) {
+                delegate.autoConnectUntrustedWifiProperty().set(engine.getAutoReconnectManager().isEnabled());
+            }
+            delegate.dnsLeakGuardProperty().set(engine.getDnsLeakProtection() != null
+                    && engine.getDnsLeakProtection().isLeakProtectionEnabled());
+        });
+    }
+
+    private void attachLiveEngineListeners() {
+        engineListener = new VpnClientEngine.ClientEventListener() {
+            @Override
+            public void onChatMessage(String senderUser, String senderDept, String senderVip, String message) {
+                // Intranet chat messages are displayed by ChatPanel
+            }
+
+            @Override
+            public void onPacketSniffed(VpnPacket packet, String direction) {
+                if (packet == null) return;
+                byte[] enc = packet.getEncryptedPayload();
+                double mbps = Math.max(0.2, ((enc != null ? enc.length : 64) * 8.0) / 1000.0);
+                marshalFx(() -> {
+                    if ("INCOMING".equalsIgnoreCase(direction)) {
+                        setDoubleProp(delegate.currentDownloadMbpsProperty(), mbps);
+                    } else {
+                        setDoubleProp(delegate.currentUploadMbpsProperty(), mbps);
+                    }
+                });
+            }
+
+            @Override
+            public void onConnectionStateChanged(String state) {
+                String clean = state != null ? state : "";
+                marshalFx(() -> {
+                    setStringProp(delegate.statusCaptionProperty(), clean);
+                    if (engine.isConnected() && engine.isAuthenticated()) {
+                        setConnectionState(ConnectionState.CONNECTED, clean);
+                        if (delegate.handshakeStepIndexProperty() instanceof IntegerProperty ip) {
+                            ip.set(HandshakeStation.values().length);
+                        }
+                        if (engine.getAssignedVirtualIp() != null) {
+                            setStringProp(delegate.virtualIpProperty(), engine.getAssignedVirtualIp());
+                        }
+                    } else if (engine.getKillSwitchManager() != null
+                            && engine.getKillSwitchManager().getState() == KillSwitchManager.State.BLOCKING) {
+                        setConnectionState(ConnectionState.BLOCKED_BY_KILL_SWITCH, clean);
+                    } else if (clean.contains("Connecting")) {
+                        setConnectionState(ConnectionState.CONNECTING, clean);
+                    } else if (clean.contains("Disconnected") || clean.contains("Connection lost")) {
+                        setConnectionState(ConnectionState.DISCONNECTED, clean);
+                        if (delegate.handshakeStepIndexProperty() instanceof IntegerProperty ip) {
+                            ip.set(0);
+                        }
+                    }
+                });
+            }
+        };
+        engine.addClientEventListener(engineListener);
+
+        if (engine.getKillSwitchManager() != null) {
+            killSwitchListener = (newState, reason) -> marshalFx(() -> {
+                delegate.killSwitchEnabledProperty().set(newState != KillSwitchManager.State.DISABLED);
+                if (newState == KillSwitchManager.State.BLOCKING) {
+                    setConnectionState(ConnectionState.BLOCKED_BY_KILL_SWITCH, reason);
+                }
+            });
+            engine.getKillSwitchManager().addListener(killSwitchListener);
         }
     }
 
@@ -98,10 +218,12 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
             KillSwitchManager ksm = engine.getKillSwitchManager();
             if (ksm == null) return;
             if (Boolean.TRUE.equals(enabled)) {
-                ksm.enable();
+                if (ksm.getState() == KillSwitchManager.State.DISABLED) {
+                    ksm.enable();
+                }
             } else {
                 String actor = engine.getUsername() != null ? engine.getUsername() : "local-user";
-                ksm.disable(actor, "Toggled via Ivory Atelier SafetyLatches");
+                ksm.disable(actor, "Disabled via Ivory Atelier Safety Latches");
             }
         });
         delegate.autoConnectUntrustedWifiProperty().addListener((obs, o, enabled) ->
@@ -117,15 +239,23 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     }
 
     private void syncGatewaysFromConfig() {
-        String host = ConfigUtil.getString("server.host", ConfigUtil.getClientDefaultHost());
-        if ("0.0.0.0".equals(host)) host = ConfigUtil.getClientDefaultHost();
-        int port = gatewayServer != null && gatewayServer.getBoundPort() > 0
-                ? gatewayServer.getBoundPort()
-                : ConfigUtil.getPort();
-        String fp = gatewayServer != null ? gatewayServer.getServerPublicKeyFingerprintHex() : "configured-tofu";
+        String host = (engine.getConnectedHost() != null && !engine.getConnectedHost().isBlank())
+                ? engine.getConnectedHost()
+                : ConfigUtil.getString("server.host", ConfigUtil.getClientDefaultHost());
+        if ("0.0.0.0".equals(host)) {
+            host = ConfigUtil.getClientDefaultHost();
+        }
+        int port = engine.getConnectedPort() > 0
+                ? engine.getConnectedPort()
+                : (gatewayServer != null && gatewayServer.getBoundPort() > 0
+                        ? gatewayServer.getBoundPort()
+                        : ConfigUtil.getPort());
+        String fp = engine.getServerFingerprint() != null
+                ? engine.getServerFingerprint()
+                : (gatewayServer != null ? gatewayServer.getServerPublicKeyFingerprintHex() : "configured-tofu");
         String shortFp = fp.length() > 12 ? fp.substring(0, 12) : fp;
         GatewayNode primary = new GatewayNode(
-                "gw-live-hq", "Local Gateway", "Primary Office Core", "HQ",
+                "gw-live-hq", "Local Gateway", "Primary Office Gateway", "HQ",
                 host, port, (int) Math.max(2, metricsCollector != null ? metricsCollector.getAverageLatencyMs() : 4),
                 12, true, true, shortFp);
         marshalFx(() -> {
@@ -150,12 +280,10 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 items.add(new EmployeeSessionItem(
                         s.getSessionId(), u, initials, dept,
                         vip, "Gateway Core", HardwareUtil.getAuthenticDeviceName(),
-                        true, "4/4 Verified", s.getConnectedAt(), "peacock"
+                        true, "Verified", s.getConnectedAt(), "peacock"
                 ));
             }
-            if (!items.isEmpty()) {
-                marshalFx(() -> delegate.activeRoster().setAll(items));
-            }
+            marshalFx(() -> delegate.activeRoster().setAll(items));
         });
     }
 
@@ -174,19 +302,28 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         if (gw == null) {
             return;
         }
-        // If pointing to a configured loopback / live server socket, run real VpnClientEngine handshake;
-        // if no live socket responds, delegate cleanly keeps demo responsiveness without UI freeze.
         ioExecutor.submit(() -> {
             try {
-                engine.connectAndHandshake(gw.hostname(), gw.port(), null, fingerprintStore, false);
+                if (!engine.isConnected()) {
+                    engine.connectAndHandshake(gw.hostname(), gw.port(), null, fingerprintStore, false);
+                }
+                if (engine.isAuthenticated()) {
+                    marshalFx(() -> {
+                        setConnectionState(ConnectionState.CONNECTED, "Connected to " + gw.hostname() + ":" + gw.port());
+                        syncRosterFromGateway();
+                    });
+                    return;
+                }
                 String user = currentIdentityProperty().get() != null ? currentIdentityProperty().get().username() : "";
-                if (!user.isBlank() && !activePassword.isEmpty()) {
+                if (!user.isBlank() && activePassword.length > 0) {
+                    String pw = new String(activePassword);
                     boolean ok = activeOtp.isEmpty()
-                            ? engine.login(user, activePassword)
-                            : engine.login(user, activePassword, activeOtp);
+                            ? engine.login(user, pw)
+                            : engine.login(user, pw, activeOtp);
                     if (ok) {
                         marshalFx(() -> {
-                            delegate.connect(gw.id());
+                            syncEngineSnapshotToUi();
+                            setConnectionState(ConnectionState.CONNECTED, "Connected to " + gw.hostname() + ":" + gw.port());
                             refreshAuditLog();
                             syncRosterFromGateway();
                         });
@@ -194,8 +331,18 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                     }
                 }
                 engine.disconnect();
-            } catch (IOException offlineFallback) {
-                delegate.connect(gw.id());
+                setConnectionStateFx(ConnectionState.DISCONNECTED, "Sign in with valid employee credentials to establish tunnel.");
+            } catch (IOException | SecurityException ex) {
+                LOGGER.warn("Live tunnel connection failed for {}:{} - {}", gw.hostname(), gw.port(), ex.getMessage());
+                setConnectionStateFx(ConnectionState.RECONNECTING, "Gateway connection failed: " + ex.getMessage());
+                marshalFx(() -> {
+                    if (delegate.handshakeFailedStationProperty() instanceof ObjectProperty<?> op) {
+                        @SuppressWarnings("unchecked")
+                        ObjectProperty<HandshakeStation> stationProp = (ObjectProperty<HandshakeStation>) op;
+                        stationProp.set(HandshakeStation.REACH_GATEWAY);
+                    }
+                    setStringProp(delegate.handshakeFailureReasonProperty(), ex.getMessage());
+                });
             }
         });
     }
@@ -211,20 +358,53 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
 
     @Override
     public void revokeSession(String sessionId) {
+        String targetUsername = sessionId;
+        for (EmployeeSessionItem item : delegate.activeRoster()) {
+            if (Objects.equals(item.sessionId(), sessionId)) {
+                targetUsername = item.username();
+                break;
+            }
+        }
         delegate.revokeSession(sessionId);
-        if (gatewayServer != null) {
+        if (gatewayServer != null && targetUsername != null && !targetUsername.isBlank()) {
+            final String resolvedUser = targetUsername;
             ioExecutor.submit(() -> {
-                gatewayServer.disconnectUser(sessionId, "admin", "ivory-atelier-console");
+                String actor = engine.getUsername() != null ? engine.getUsername() : "admin";
+                gatewayServer.disconnectUser(resolvedUser, "Revoked via Ivory Atelier console", actor);
                 syncRosterFromGateway();
+                refreshAuditLog();
             });
         }
     }
 
     @Override
     public CompletableFuture<AuthResult> authenticate(String username, String password, String otpCode) {
-        this.activePassword = password != null ? password : "";
+        Arrays.fill(this.activePassword, '\0');
+        this.activePassword = password != null ? password.toCharArray() : new char[0];
         this.activeOtp = otpCode != null ? otpCode.trim() : "";
-        return delegate.authenticate(username, password, otpCode);
+
+        if (databaseManager == null || databaseManager.isClosed()) {
+            return delegate.authenticate(username, password, otpCode);
+        }
+
+        return CompletableFuture.supplyAsync(() -> {
+            char[] copyPw = this.activePassword.clone();
+            try {
+                boolean totpRequired = databaseManager.isTotpEnabled(username);
+                if (totpRequired && this.activeOtp.isEmpty()) {
+                    return new AuthResult(false, true, "Enter your 6-digit authenticator code.");
+                }
+                UserAccount account = totpRequired
+                        ? databaseManager.authenticateUser(username, copyPw, this.activeOtp, "local")
+                        : databaseManager.authenticateUser(username, copyPw, "local");
+                if (account == null) {
+                    return new AuthResult(false, totpRequired, "Authentication rejected — check username, password, or authenticator code.");
+                }
+                return new AuthResult(true, false, "Authenticated cleanly as " + account.username());
+            } finally {
+                Arrays.fill(copyPw, '\0');
+            }
+        }, ioExecutor);
     }
 
     @Override
@@ -257,21 +437,73 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 if (verify != null) {
                     boolean intact = verify.status() == AuditVerifyResult.AuditStatus.OK;
                     String statusText = (intact ? "CHAIN INTACT • " : "VERIFY ALERT • ") + verify.checkedRows() + " ROWS";
-                    if (delegate.auditChainStatusProperty() instanceof StringProperty sp) {
-                        sp.set(statusText);
-                    }
+                    setStringProp(delegate.auditChainStatusProperty(), statusText);
                 }
             });
         });
     }
 
+    @Override
+    public boolean exportAuditCsv(Path targetFile) {
+        if (auditService != null && databaseManager != null && !databaseManager.isClosed()) {
+            try {
+                auditService.exportAuditToCsv(targetFile);
+                return true;
+            } catch (IOException ex) {
+                LOGGER.error("Failed to export live audit log to CSV: {}", ex.getMessage());
+                return false;
+            }
+        }
+        return delegate.exportAuditCsv(targetFile);
+    }
+
+    private static String formatDeptLabel(String rawDept) {
+        if (rawDept == null || rawDept.isBlank()) {
+            return "Shared";
+        }
+        String up = rawDept.trim().toUpperCase(Locale.ROOT);
+        return switch (up) {
+            case "FINANCE" -> "Finance";
+            case "IT" -> "Engineering";
+            case "HR" -> "HR";
+            case "HEADQUARTERS" -> "Headquarters";
+            default -> rawDept;
+        };
+    }
+
     private static AuditCategory mapCategory(String eventType) {
         if (eventType == null) return AuditCategory.SIGN_IN;
         String up = eventType.toUpperCase(Locale.ROOT);
-        if (up.contains("REVOKE")) return AuditCategory.REVOKE;
+        if (up.contains("REVOKE") || up.contains("DISCONNECT")) return AuditCategory.REVOKE;
         if (up.contains("FAIL") || up.contains("DENIED") || up.contains("LOCK")) return AuditCategory.FAILED_ATTEMPT;
-        if (up.contains("CONFIG") || up.contains("POLICY") || up.contains("TOTP") || up.contains("DEVICE")) return AuditCategory.POLICY_CHANGE;
+        if (up.contains("CONFIG") || up.contains("POLICY") || up.contains("TOTP") || up.contains("DEVICE") || up.contains("PASSWORD")) {
+            return AuditCategory.POLICY_CHANGE;
+        }
         return AuditCategory.SIGN_IN;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void setConnectionState(ConnectionState state, String caption) {
+        if (delegate.connectionStateProperty() instanceof ObjectProperty<?> op) {
+            ((ObjectProperty<ConnectionState>) op).set(state);
+        }
+        setStringProp(delegate.statusCaptionProperty(), caption);
+    }
+
+    private void setConnectionStateFx(ConnectionState state, String caption) {
+        marshalFx(() -> setConnectionState(state, caption));
+    }
+
+    private static void setStringProp(ReadOnlyStringProperty prop, String value) {
+        if (prop instanceof StringProperty sp) {
+            sp.set(value);
+        }
+    }
+
+    private static void setDoubleProp(ReadOnlyDoubleProperty prop, double value) {
+        if (prop instanceof DoubleProperty dp) {
+            dp.set(value);
+        }
     }
 
     private void marshalFx(Runnable r) {
@@ -285,6 +517,16 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
 
     @Override
     public void close() {
+        Arrays.fill(activePassword, '\0');
+        if (engineListener != null) {
+            engine.removeClientEventListener(engineListener);
+        }
+        if (killSwitchListener != null && engine.getKillSwitchManager() != null) {
+            engine.getKillSwitchManager().removeListener(killSwitchListener);
+        }
+        if (ownsEngine) {
+            engine.close();
+        }
         delegate.close();
         ioExecutor.shutdownNow();
     }
@@ -318,9 +560,14 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     @Override public ObservableList<AuditEventItem> auditEvents() { return delegate.auditEvents(); }
     @Override public ReadOnlyBooleanProperty auditLoadingProperty() { return delegate.auditLoadingProperty(); }
     @Override public ReadOnlyStringProperty auditChainStatusProperty() { return delegate.auditChainStatusProperty(); }
-    @Override public void retryHandshake() { delegate.retryHandshake(); }
+    @Override public void retryHandshake() { connect(); }
     @Override public void simulateHandshakeFailure() { delegate.simulateHandshakeFailure(); }
-    @Override public void clearKillSwitchBlock() { delegate.clearKillSwitchBlock(); }
+    @Override public void clearKillSwitchBlock() {
+        if (engine.getKillSwitchManager() != null) {
+            engine.getKillSwitchManager().enable();
+        }
+        delegate.clearKillSwitchBlock();
+    }
     @Override public void selectGateway(String gatewayId) { delegate.selectGateway(gatewayId); }
     @Override public void toggleFavoriteGateway(String gatewayId) { delegate.toggleFavoriteGateway(gatewayId); }
     @Override public void activateWorkMode(String modeId) { delegate.activateWorkMode(modeId); }
@@ -331,5 +578,4 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     @Override public void rerunPostureChecks() { delegate.rerunPostureChecks(); }
     @Override public void rotateInviteKey() { delegate.rotateInviteKey(); }
     @Override public CompletableFuture<AuthResult> authenticateSso(String provider) { return delegate.authenticateSso(provider); }
-    @Override public boolean exportAuditCsv(Path targetFile) { return delegate.exportAuditCsv(targetFile); }
 }

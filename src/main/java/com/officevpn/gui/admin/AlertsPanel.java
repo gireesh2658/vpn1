@@ -1,6 +1,7 @@
 package com.officevpn.gui.admin;
 
 import com.officevpn.admin.AlertManager;
+import com.officevpn.config.Messages;
 import com.officevpn.gui.UiSafe;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -33,7 +34,7 @@ public final class AlertsPanel extends VBox {
     private final AlertManager alertManager;
     private final Runnable onAlertsChanged;
 
-    private final CheckBox unreadOnlyCheck = new CheckBox("Unread Only");
+    private final CheckBox unreadOnlyCheck = new CheckBox(Messages.get("admin.alerts.check.unreadOnly"));
     private final ComboBox<String> severityFilter = new ComboBox<>();
     private final Label summaryPill = new Label("0 Unread");
     private final TableView<AlertManager.SystemAlert> table = new TableView<>();
@@ -51,9 +52,9 @@ public final class AlertsPanel extends VBox {
         HBox header = new HBox(10);
         header.setAlignment(Pos.CENTER_LEFT);
         VBox titleBox = new VBox(2);
-        Label title = new Label("Security Alerts & Incident Response");
+        Label title = new Label(Messages.get("admin.alerts.title"));
         title.getStyleClass().add("page-title");
-        Label subtitle = new Label("Brute-force detections, kill switch triggers, audit verification failures, and admin change notices");
+        Label subtitle = new Label(Messages.get("admin.alerts.subtitle"));
         subtitle.getStyleClass().add("page-subtitle");
         titleBox.getChildren().addAll(title, subtitle);
         Region spacer = new Region();
@@ -69,32 +70,32 @@ public final class AlertsPanel extends VBox {
         severityFilter.getSelectionModel().selectFirst();
         severityFilter.setOnAction(e -> refresh());
 
-        Button refreshBtn = new Button("Refresh");
-        refreshBtn.getStyleClass().add("btn-secondary");
-        refreshBtn.setOnAction(e -> refresh());
+        Button refreshButton = new Button(Messages.get("common.refresh"));
+        refreshButton.getStyleClass().add("btn-secondary");
+        refreshButton.setOnAction(e -> refresh());
 
-        Button markSelectedBtn = new Button("Mark Read");
-        markSelectedBtn.getStyleClass().add("btn-primary");
-        markSelectedBtn.setDisable(true);
-        table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> markSelectedBtn.setDisable(sel == null));
-        markSelectedBtn.setOnAction(e -> {
+        Button markReadButton = new Button(Messages.get("admin.alerts.button.markRead"));
+        markReadButton.getStyleClass().add("btn-primary");
+        markReadButton.setDisable(true);
+        table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> markReadButton.setDisable(sel == null));
+        markReadButton.setOnAction(e -> {
             AlertManager.SystemAlert sel = table.getSelectionModel().getSelectedItem();
             if (sel == null) return;
             CompletableFuture.runAsync(() -> alertManager.markAlertRead(sel.id()))
                     .thenRun(() -> Platform.runLater(this::notifyRefresh));
         });
 
-        Button markAllReadBtn = new Button("Mark All Read");
-        markAllReadBtn.getStyleClass().add("btn-secondary");
-        markAllReadBtn.setOnAction(e -> {
+        Button markAllReadButton = new Button(Messages.get("admin.alerts.button.markAllRead"));
+        markAllReadButton.getStyleClass().add("btn-secondary");
+        markAllReadButton.setOnAction(e -> {
             List<AlertManager.SystemAlert> items = List.copyOf(table.getItems());
             CompletableFuture.runAsync(() -> items.stream().filter(a -> !a.isRead()).forEach(a -> alertManager.markAlertRead(a.id())))
                     .thenRun(() -> Platform.runLater(this::notifyRefresh));
         });
 
-        Button purgeBtn = new Button("Clear Old Alerts...");
-        purgeBtn.getStyleClass().add("btn-warning");
-        purgeBtn.setOnAction(e -> {
+        Button purgeAlertsButton = new Button(Messages.get("admin.alerts.button.purge"));
+        purgeAlertsButton.getStyleClass().add("btn-warning");
+        purgeAlertsButton.setOnAction(e -> {
             Optional<String> daysOpt = UiSafe.promptText(UiSafe.windowOf(this),
                     "Purge Historical Alerts",
                     "Delete alerts older than N days:",
@@ -117,7 +118,7 @@ public final class AlertsPanel extends VBox {
 
         Region tbSpacer = new Region();
         HBox.setHgrow(tbSpacer, Priority.ALWAYS);
-        toolbar.getChildren().addAll(unreadOnlyCheck, severityFilter, refreshBtn, tbSpacer, markSelectedBtn, markAllReadBtn, purgeBtn);
+        toolbar.getChildren().addAll(unreadOnlyCheck, severityFilter, refreshButton, tbSpacer, markReadButton, markAllReadButton, purgeAlertsButton);
 
         UiSafe.configureSafeTable(table);
         table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("ID", a -> String.valueOf(a.id()), 55), 45, 65));

@@ -1,6 +1,7 @@
 package com.officevpn.gui.client;
 
 import com.officevpn.client.VpnClientEngine;
+import com.officevpn.config.Messages;
 import com.officevpn.gui.UiSafe;
 import com.officevpn.protocol.VpnPacket;
 import com.officevpn.security.KillSwitchManager;
@@ -37,14 +38,14 @@ public final class ConnectionStatusPanel extends VBox {
     private final Deque<String> lineBuffer = new ArrayDeque<>(MAX_CONSOLE_LINES + 1);
 
     private final Label tunnelModePill = new Label("-");
-    private final Button toggleModeBtn = new Button("Switch Mode");
+    private final Button switchTunnelModeButton = new Button(Messages.get("tunnel.button.switchFull"));
     private final Label routesInfoLabel = new Label("-");
 
     private final Label killSwitchPill = new Label("-");
-    private final Button killSwitchBtn = new Button("Toggle Kill Switch");
+    private final Button killSwitchButton = new Button(Messages.get("tunnel.button.enableKillSwitch"));
 
     private final Label dnsGuardPill = new Label("-");
-    private final CheckBox autoReconnectCheck = new CheckBox("Auto-Reconnect Enabled");
+    private final CheckBox autoReconnectCheck = new CheckBox(Messages.get("tunnel.check.autoReconnect"));
 
     private final Label serverFpLabel = new Label("-");
     private final TextArea telemetryConsole = new TextArea();
@@ -64,17 +65,20 @@ public final class ConnectionStatusPanel extends VBox {
         HBox header = new HBox(10);
         header.setAlignment(Pos.CENTER_LEFT);
         VBox titleBox = new VBox(2);
-        Label title = new Label("Tunnel Cryptography & Network Defenses");
+        Label title = new Label(Messages.get("tunnel.title"));
         title.getStyleClass().add("page-title");
-        Label subtitle = new Label("Manage Split/Full tunneling routes, fail-closed Kill Switch, DNS Leak Guard, and inspect live AEAD frames");
+        Label subtitle = new Label(Messages.get("tunnel.subtitle"));
         subtitle.getStyleClass().add("page-subtitle");
         titleBox.getChildren().addAll(title, subtitle);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        Button refreshBtn = new Button("Sync Telemetry");
-        refreshBtn.getStyleClass().add("btn-secondary");
-        refreshBtn.setOnAction(e -> refreshControls());
-        header.getChildren().addAll(titleBox, spacer, refreshBtn);
+        Button refreshButton = new Button(Messages.get("tunnel.button.sync"));
+        refreshButton.getStyleClass().add("btn-secondary");
+        Messages.configureAccessibleControl(refreshButton,
+                Messages.get("tunnel.button.sync"),
+                Messages.get("tunnel.tooltip.sync"));
+        refreshButton.setOnAction(e -> refreshControls());
+        header.getChildren().addAll(titleBox, spacer, refreshButton);
 
         GridPane controlsGrid = new GridPane();
         controlsGrid.setHgap(14);
@@ -88,13 +92,16 @@ public final class ConnectionStatusPanel extends VBox {
         // Card 1: Tunnel Mode (Split / Full)
         VBox tunnelCard = new VBox(8);
         tunnelCard.getStyleClass().add("card");
-        Label tTitle = new Label("TUNNEL ROUTING MODE");
+        Label tTitle = new Label(Messages.get("tunnel.card.mode"));
         tTitle.getStyleClass().add("kpi-label");
         tunnelModePill.getStyleClass().addAll("pill", "pill-info");
         routesInfoLabel.getStyleClass().add("muted-label");
         routesInfoLabel.setWrapText(true);
-        toggleModeBtn.getStyleClass().add("btn-secondary");
-        toggleModeBtn.setOnAction(e -> {
+        switchTunnelModeButton.getStyleClass().add("btn-secondary");
+        Messages.configureAccessibleControl(switchTunnelModeButton,
+                Messages.get("tunnel.button.switchFull"),
+                Messages.get("tunnel.tooltip.switchMode"));
+        switchTunnelModeButton.setOnAction(e -> {
             TunnelManager tm = engine.getTunnelManager();
             if (tm == null) return;
             TunnelManager.TunnelMode next = (tm.getMode() == TunnelManager.TunnelMode.FULL)
@@ -104,19 +111,22 @@ public final class ConnectionStatusPanel extends VBox {
             appendStateMessage("Switched tunnel routing mode to " + next);
             refreshControls();
         });
-        tunnelCard.getChildren().addAll(tTitle, tunnelModePill, routesInfoLabel, toggleModeBtn);
+        tunnelCard.getChildren().addAll(tTitle, tunnelModePill, routesInfoLabel, switchTunnelModeButton);
 
         // Card 2: Kill Switch
         VBox ksCard = new VBox(8);
         ksCard.getStyleClass().add("card");
-        Label kTitle = new Label("FAIL-CLOSED KILL SWITCH");
+        Label kTitle = new Label(Messages.get("tunnel.card.killSwitch"));
         kTitle.getStyleClass().add("kpi-label");
         killSwitchPill.getStyleClass().addAll("pill", "pill-muted");
-        Label ksDesc = new Label("Blocks non-tunnel traffic immediately upon unexpected socket drops.");
+        Label ksDesc = new Label(Messages.get("tunnel.killSwitch.desc"));
         ksDesc.getStyleClass().add("muted-label");
         ksDesc.setWrapText(true);
-        killSwitchBtn.getStyleClass().add("btn-warning");
-        killSwitchBtn.setOnAction(e -> {
+        killSwitchButton.getStyleClass().add("btn-warning");
+        Messages.configureAccessibleControl(killSwitchButton,
+                Messages.get("tunnel.button.enableKillSwitch"),
+                Messages.get("tunnel.tooltip.killSwitch"));
+        killSwitchButton.setOnAction(e -> {
             KillSwitchManager ks = engine.getKillSwitchManager();
             if (ks == null) return;
             if (ks.getState() == KillSwitchManager.State.DISABLED) {
@@ -129,15 +139,16 @@ public final class ConnectionStatusPanel extends VBox {
             }
             refreshControls();
         });
-        ksCard.getChildren().addAll(kTitle, killSwitchPill, ksDesc, killSwitchBtn);
+        ksCard.getChildren().addAll(kTitle, killSwitchPill, ksDesc, killSwitchButton);
 
         // Card 3: DNS Leak Guard & Auto-Reconnect
         VBox dnsCard = new VBox(8);
         dnsCard.getStyleClass().add("card");
-        Label dTitle = new Label("DNS LEAK GUARD & RECOVERY");
+        Label dTitle = new Label(Messages.get("tunnel.card.dns"));
         dTitle.getStyleClass().add("kpi-label");
         dnsGuardPill.getStyleClass().addAll("pill", "pill-success");
         autoReconnectCheck.setSelected(engine.getAutoReconnectManager() != null && engine.getAutoReconnectManager().isEnabled());
+        Messages.configureAccessibleControl(autoReconnectCheck, Messages.get("tunnel.check.autoReconnect"), null);
         autoReconnectCheck.setOnAction(e -> {
             boolean en = autoReconnectCheck.isSelected();
             engine.setAutoReconnect(en);
@@ -158,20 +169,26 @@ public final class ConnectionStatusPanel extends VBox {
 
         HBox consoleBar = new HBox(10);
         consoleBar.setAlignment(Pos.CENTER_LEFT);
-        Label cTitle = new Label("Live Wire Encryption & Handshake Telemetry");
+        Label cTitle = new Label(Messages.get("tunnel.sniffer.title"));
         cTitle.getStyleClass().add("section-title");
         Region cSpacer = new Region();
         HBox.setHgrow(cSpacer, Priority.ALWAYS);
-        Button copyBtn = new Button("Copy Log");
-        copyBtn.getStyleClass().add("btn-secondary");
-        copyBtn.setOnAction(e -> UiSafe.copyToClipboard(telemetryConsole.getText()));
-        Button clearBtn = new Button("Clear");
-        clearBtn.getStyleClass().add("btn-danger");
-        clearBtn.setOnAction(e -> {
+        Button copyLogButton = new Button(Messages.get("tunnel.button.copyLog"));
+        copyLogButton.getStyleClass().add("btn-secondary");
+        Messages.configureAccessibleControl(copyLogButton,
+                Messages.get("tunnel.button.copyLog"),
+                Messages.get("tunnel.tooltip.copyLog"));
+        copyLogButton.setOnAction(e -> UiSafe.copyToClipboard(telemetryConsole.getText()));
+        Button clearLogButton = new Button(Messages.get("tunnel.button.clearLog"));
+        clearLogButton.getStyleClass().add("btn-danger");
+        Messages.configureAccessibleControl(clearLogButton,
+                Messages.get("tunnel.button.clearLog"),
+                Messages.get("tunnel.tooltip.clearLog"));
+        clearLogButton.setOnAction(e -> {
             lineBuffer.clear();
             telemetryConsole.clear();
         });
-        consoleBar.getChildren().addAll(cTitle, cSpacer, copyBtn, clearBtn);
+        consoleBar.getChildren().addAll(cTitle, cSpacer, copyLogButton, clearLogButton);
 
         telemetryConsole.setEditable(false);
         telemetryConsole.setWrapText(false);
@@ -206,7 +223,11 @@ public final class ConnectionStatusPanel extends VBox {
             tunnelModePill.setText("MODE: " + tm.getMode().name());
             tunnelModePill.getStyleClass().removeAll("pill-info", "pill-warning");
             tunnelModePill.getStyleClass().add(tm.getMode() == TunnelManager.TunnelMode.FULL ? "pill-warning" : "pill-info");
-            toggleModeBtn.setText(tm.getMode() == TunnelManager.TunnelMode.FULL ? "Switch to SPLIT" : "Switch to FULL");
+            String nextModeLabel = tm.getMode() == TunnelManager.TunnelMode.FULL
+                    ? Messages.get("tunnel.button.switchSplit")
+                    : Messages.get("tunnel.button.switchFull");
+            switchTunnelModeButton.setText(nextModeLabel);
+            switchTunnelModeButton.setAccessibleText(nextModeLabel);
             routesInfoLabel.setText("Office Routes: " + String.join(", ", tm.getOfficeRoutes()));
         }
 
@@ -220,7 +241,11 @@ public final class ConnectionStatusPanel extends VBox {
                 case BLOCKING -> "pill-danger";
                 case DISABLED -> "pill-muted";
             });
-            killSwitchBtn.setText(st == KillSwitchManager.State.DISABLED ? "Enable Kill Switch" : "Disable Kill Switch");
+            String nextKsLabel = st == KillSwitchManager.State.DISABLED
+                    ? Messages.get("tunnel.button.enableKillSwitch")
+                    : Messages.get("tunnel.button.disableKillSwitch");
+            killSwitchButton.setText(nextKsLabel);
+            killSwitchButton.setAccessibleText(nextKsLabel);
         }
 
         dnsGuardPill.setText(UiSafe.text(engine.getDnsStatus(), 64));

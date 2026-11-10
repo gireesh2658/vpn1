@@ -1,6 +1,7 @@
 package com.officevpn.gui.admin;
 
 import com.officevpn.admin.ConfigManager;
+import com.officevpn.config.Messages;
 import com.officevpn.gui.UiSafe;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -43,30 +44,30 @@ public final class ConfigPanel extends VBox {
         HBox header = new HBox(10);
         header.setAlignment(Pos.CENTER_LEFT);
         VBox titleBox = new VBox(2);
-        Label title = new Label("Gateway Runtime Configuration");
+        Label title = new Label(Messages.get("admin.config.title"));
         title.getStyleClass().add("page-title");
-        Label subtitle = new Label("Inspect and adjust allowlisted gateway parameters with strict validation & MySQL audit logging");
+        Label subtitle = new Label(Messages.get("admin.config.subtitle"));
         subtitle.getStyleClass().add("page-subtitle");
         titleBox.getChildren().addAll(title, subtitle);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button refreshBtn = new Button("Refresh");
-        refreshBtn.getStyleClass().add("btn-secondary");
-        refreshBtn.setOnAction(e -> refresh());
+        Button refreshButton = new Button(Messages.get("common.refresh"));
+        refreshButton.getStyleClass().add("btn-secondary");
+        refreshButton.setOnAction(e -> refresh());
 
-        Button resetBtn = new Button("Reset All Defaults");
-        resetBtn.getStyleClass().add("btn-warning");
-        resetBtn.setOnAction(e -> {
+        Button resetDefaultsButton = new Button(Messages.get("admin.config.button.resetDefaults"));
+        resetDefaultsButton.getStyleClass().add("btn-warning");
+        resetDefaultsButton.setOnAction(e -> {
             if (UiSafe.showConfirm(UiSafe.windowOf(this), "Reset Configuration",
-                    "Reset all allowlisted runtime parameters back to secure factory defaults?",
+                    "Reset all allowlisted runtime parameters back to factory defaults?",
                     "This action is logged to the immutable audit trail.")) {
                 configManager.resetToDefaults(adminUsername);
                 refresh();
                 feedbackLabel.setText("All allowlisted settings reset to factory defaults.");
             }
         });
-        header.getChildren().addAll(titleBox, spacer, refreshBtn, resetBtn);
+        header.getChildren().addAll(titleBox, spacer, refreshButton, resetDefaultsButton);
 
         UiSafe.configureSafeTable(table);
         table.getColumns().add(UiSafe.safeColumn("Configuration Key", ConfigEntryRow::key, 240));
@@ -84,13 +85,13 @@ public final class ConfigPanel extends VBox {
         newValueField.setPromptText("Enter new value...");
         newValueField.setPrefWidth(220);
 
-        Button applyBtn = new Button("Apply & Audit");
-        applyBtn.getStyleClass().add("btn-primary");
-        applyBtn.setDisable(true);
+        Button saveSettingButton = new Button(Messages.get("admin.config.button.saveSetting"));
+        saveSettingButton.getStyleClass().add("btn-primary");
+        saveSettingButton.setDisable(true);
 
         table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> {
             boolean has = sel != null;
-            applyBtn.setDisable(!has);
+            saveSettingButton.setDisable(!has);
             if (has) {
                 selectedKeyField.setText(sel.key());
                 newValueField.setText(sel.value());
@@ -101,7 +102,7 @@ public final class ConfigPanel extends VBox {
             }
         });
 
-        applyBtn.setOnAction(e -> {
+        saveSettingButton.setOnAction(e -> {
             String k = selectedKeyField.getText();
             String v = newValueField.getText();
             if (k == null || k.isBlank() || v == null) return;
@@ -115,7 +116,7 @@ public final class ConfigPanel extends VBox {
         });
 
         feedbackLabel.getStyleClass().add("muted-label");
-        editorRow.getChildren().addAll(selectedKeyField, newValueField, applyBtn);
+        editorRow.getChildren().addAll(selectedKeyField, newValueField, saveSettingButton);
 
         VBox card = new VBox(12, table, editorRow, feedbackLabel);
         card.getStyleClass().add("card");

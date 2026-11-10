@@ -133,6 +133,8 @@ public final class VpnClientEngine implements AutoCloseable {
     private String assignedVirtualIp = "0.0.0.0";
     private Department department;
     private Role role;
+    private volatile String connectedHost;
+    private volatile int connectedPort = -1;
 
     private final List<ClientEventListener> listeners = new CopyOnWriteArrayList<>();
 
@@ -242,6 +244,8 @@ public final class VpnClientEngine implements AutoCloseable {
         opLock.lock();
         try {
             Objects.requireNonNull(host, "Host cannot be null");
+            this.connectedHost = host.trim();
+            this.connectedPort = port;
 
             this.socket = new Socket();
             this.socket.setTcpNoDelay(true);
@@ -674,6 +678,42 @@ public final class VpnClientEngine implements AutoCloseable {
     }
 
     /**
+     * Requests a self-service password update over the authenticated encrypted tunnel.
+     * Both password char arrays are wiped upon completion.
+     */
+    public void changePassword(char[] currentPassword, char[] newPassword) throws IOException {
+        opLock.lock();
+        byte[] payload = null;
+        try {
+            ensureAuthenticated();
+            Objects.requireNonNull(currentPassword, "Current password cannot be null");
+            Objects.requireNonNull(newPassword, "New password cannot be null");
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            try (DataOutputStream dos = new DataOutputStream(baos)) {
+                dos.writeUTF(new String(currentPassword));
+                dos.writeUTF(new String(newPassword));
+                dos.flush();
+            }
+            payload = baos.toByteArray();
+
+            long reqId = reqIdSeq.getAndIncrement();
+            Map<String, String> meta = new LinkedHashMap<>();
+            meta.put("reqId", String.valueOf(reqId));
+            meta.put("seqNum", String.valueOf(getNextClientSendSeq()));
+
+            VpnPacket req = encryptClientPacket(PacketType.CHANGE_PASSWORD, meta, payload);
+            VerifiedPacket res = sendAndAwait(req, reqId, PacketType.CHANGE_PASSWORD, options.getOpTimeoutMs());
+            checkErrorResponse(res);
+        } finally {
+            if (payload != null) Arrays.fill(payload, (byte) 0);
+            if (currentPassword != null) Arrays.fill(currentPassword, '\0');
+            if (newPassword != null) Arrays.fill(newPassword, '\0');
+            opLock.unlock();
+        }
+    }
+
+    /**
      * Sends an encrypted ping packet to verify tunnel responsiveness and sequence freshness.
      *
      * @return True if gateway returns verified PONG successfully
@@ -1037,6 +1077,14 @@ public final class VpnClientEngine implements AutoCloseable {
 
     public Role getRole() {
         return role;
+    }
+
+    public String getConnectedHost() {
+        return connectedHost;
+    }
+
+    public int getConnectedPort() {
+        return connectedPort;
     }
 
     public Socket getSocket() {

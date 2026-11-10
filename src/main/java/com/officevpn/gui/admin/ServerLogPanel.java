@@ -1,5 +1,6 @@
 package com.officevpn.gui.admin;
 
+import com.officevpn.config.Messages;
 import com.officevpn.gui.UiSafe;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -45,9 +46,9 @@ public final class ServerLogPanel extends VBox {
         HBox header = new HBox(10);
         header.setAlignment(Pos.CENTER_LEFT);
         VBox titleBox = new VBox(2);
-        Label title = new Label("Gateway System Console");
+        Label title = new Label(Messages.get("admin.console.title"));
         title.getStyleClass().add("page-title");
-        Label subtitle = new Label("Live server lifecycle, TLS/ECDH handshake events, client routing, and error streams");
+        Label subtitle = new Label(Messages.get("admin.console.subtitle"));
         subtitle.getStyleClass().add("page-subtitle");
         titleBox.getChildren().addAll(title, subtitle);
         Region spacer = new Region();
@@ -63,13 +64,13 @@ public final class ServerLogPanel extends VBox {
 
         autoScrollCheck.setSelected(true);
 
-        Button copyBtn = new Button("Copy All");
-        copyBtn.getStyleClass().add("btn-secondary");
-        copyBtn.setOnAction(e -> UiSafe.copyToClipboard(consoleArea.getText()));
+        Button copyConsoleButton = new Button(Messages.get("admin.console.button.copyAll"));
+        copyConsoleButton.getStyleClass().add("btn-secondary");
+        copyConsoleButton.setOnAction(e -> UiSafe.copyToClipboard(consoleArea.getText()));
 
-        Button clearBtn = new Button("Clear Console");
-        clearBtn.getStyleClass().add("btn-danger");
-        clearBtn.setOnAction(e -> {
+        Button clearConsoleButton = new Button(Messages.get("admin.console.button.clear"));
+        clearConsoleButton.getStyleClass().add("btn-danger");
+        clearConsoleButton.setOnAction(e -> {
             logBuffer.clear();
             consoleArea.clear();
             countPill.setText("0 Lines");
@@ -77,7 +78,7 @@ public final class ServerLogPanel extends VBox {
 
         Region tbSpacer = new Region();
         HBox.setHgrow(tbSpacer, Priority.ALWAYS);
-        toolbar.getChildren().addAll(filterField, autoScrollCheck, tbSpacer, copyBtn, clearBtn);
+        toolbar.getChildren().addAll(filterField, autoScrollCheck, tbSpacer, copyConsoleButton, clearConsoleButton);
 
         consoleArea.setEditable(false);
         consoleArea.setWrapText(false);

@@ -18,6 +18,7 @@ public enum PacketType {
     FILE_DOWNLOAD_REQ,
     FILE_DOWNLOAD_RES,
     CHAT_MESSAGE,
+    CHANGE_PASSWORD,
     PING,
     DISCONNECT,
     ERROR

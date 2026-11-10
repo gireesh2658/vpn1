@@ -1,6 +1,7 @@
 package com.officevpn.gui.client;
 
 import com.officevpn.client.VpnClientEngine;
+import com.officevpn.config.Messages;
 import com.officevpn.gui.UiSafe;
 import com.officevpn.model.Department;
 import com.officevpn.model.Role;
@@ -48,16 +49,16 @@ public final class FileVaultPanel extends VBox {
         HBox header = new HBox(10);
         header.setAlignment(Pos.CENTER_LEFT);
         VBox titleBox = new VBox(2);
-        Label title = new Label("Encrypted Departmental File Vault");
+        Label title = new Label(Messages.get("vault.title"));
         title.getStyleClass().add("page-title");
-        Label subtitle = new Label("Zero-trust RBAC file exchange over directional AES-256-GCM tunnel with canonical path confinement");
+        Label subtitle = new Label(Messages.get("vault.subtitle"));
         subtitle.getStyleClass().add("page-subtitle");
         titleBox.getChildren().addAll(title, subtitle);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
         boolean isHqAdmin = engine.getRole() == Role.ADMIN && engine.getDepartment() == Department.HEADQUARTERS;
-        rbacPill.setText(isHqAdmin ? "HQ ADMIN: CROSS-VAULT" : "RBAC LOCKED: " + engine.getDepartment());
+        rbacPill.setText(isHqAdmin ? Messages.get("vault.rbac.admin") : Messages.format("vault.rbac.locked", engine.getDepartment()));
         rbacPill.getStyleClass().addAll("pill", isHqAdmin ? "pill-warning" : "pill-info");
         header.getChildren().addAll(titleBox, spacer, rbacPill);
 
@@ -73,36 +74,49 @@ public final class FileVaultPanel extends VBox {
         vaultSelector.setValue(engine.getDepartment() != null ? engine.getDepartment() : Department.IT);
         vaultSelector.setOnAction(e -> refreshFiles());
 
-        Button refreshBtn = new Button("Refresh Vault");
-        refreshBtn.getStyleClass().add("btn-secondary");
-        refreshBtn.setOnAction(e -> refreshFiles());
+        Button refreshButton = new Button(Messages.get("vault.button.refresh"));
+        refreshButton.getStyleClass().add("btn-secondary");
+        Messages.configureAccessibleControl(refreshButton,
+                Messages.get("vault.button.refresh"),
+                Messages.get("vault.tooltip.refresh"));
+        refreshButton.setOnAction(e -> refreshFiles());
 
-        Button uploadBtn = new Button("Upload File...");
-        uploadBtn.getStyleClass().add("btn-primary");
-        uploadBtn.setOnAction(e -> handleUpload());
+        Button uploadButton = new Button(Messages.get("vault.button.upload"));
+        uploadButton.getStyleClass().add("btn-primary");
+        Messages.configureAccessibleControl(uploadButton,
+                Messages.get("vault.button.upload"),
+                Messages.get("vault.tooltip.upload"));
+        uploadButton.setOnAction(e -> handleUpload());
 
-        Button downloadBtn = new Button("Download Selected...");
-        downloadBtn.getStyleClass().add("btn-success");
-        downloadBtn.setDisable(true);
-        downloadBtn.setOnAction(e -> handleDownload());
+        Button downloadButton = new Button(Messages.get("vault.button.download"));
+        downloadButton.getStyleClass().add("btn-success");
+        downloadButton.setDisable(true);
+        Messages.configureAccessibleControl(downloadButton,
+                Messages.get("vault.button.download"),
+                Messages.get("vault.tooltip.download"));
+        downloadButton.setOnAction(e -> handleDownload());
 
-        Button copyBtn = new Button("Copy Filename");
-        copyBtn.getStyleClass().add("btn-secondary");
-        copyBtn.setDisable(true);
-        copyBtn.setOnAction(e -> {
+        Button copyFilenameButton = new Button(Messages.get("vault.button.copyName"));
+        copyFilenameButton.getStyleClass().add("btn-secondary");
+        copyFilenameButton.setDisable(true);
+        Messages.configureAccessibleControl(copyFilenameButton,
+                Messages.get("vault.button.copyName"),
+                Messages.get("vault.tooltip.copyName"));
+        copyFilenameButton.setOnAction(e -> {
             VaultFileRow sel = table.getSelectionModel().getSelectedItem();
             if (sel != null) UiSafe.copyToClipboard(sel.fileName());
         });
 
         table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> {
             boolean has = sel != null;
-            downloadBtn.setDisable(!has);
-            copyBtn.setDisable(!has);
+            downloadButton.setDisable(!has);
+            copyFilenameButton.setDisable(!has);
         });
 
         Region tbSpacer = new Region();
         HBox.setHgrow(tbSpacer, Priority.ALWAYS);
-        toolbar.getChildren().addAll(new Label("Vault:"), vaultSelector, refreshBtn, tbSpacer, copyBtn, uploadBtn, downloadBtn);
+        toolbar.getChildren().addAll(new Label(Messages.get("vault.label.selector")), vaultSelector,
+                refreshButton, tbSpacer, copyFilenameButton, uploadButton, downloadButton);
 
         UiSafe.configureSafeTable(table);
         table.getColumns().add(UiSafe.safeColumn("File Name", VaultFileRow::fileName, 360));
@@ -149,7 +163,7 @@ public final class FileVaultPanel extends VBox {
         if (dept == null) return;
 
         FileChooser fc = new FileChooser();
-        fc.setTitle("Select File to Encrypt & Upload to " + dept);
+        fc.setTitle(Messages.format("vault.dialog.upload.title", dept));
         File selected = fc.showOpenDialog(UiSafe.windowOf(this));
         if (selected == null) return;
 
@@ -188,7 +202,7 @@ public final class FileVaultPanel extends VBox {
         if (row == null || dept == null) return;
 
         FileChooser fc = new FileChooser();
-        fc.setTitle("Save Decrypted File");
+        fc.setTitle(Messages.get("vault.dialog.download.title"));
         fc.setInitialFileName(row.fileName());
         File dest = fc.showSaveDialog(UiSafe.windowOf(this));
         if (dest == null) return;

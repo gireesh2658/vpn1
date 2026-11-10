@@ -2,6 +2,7 @@ package com.officevpn.gui.admin;
 
 import com.officevpn.admin.AlertManager;
 import com.officevpn.admin.AuditService;
+import com.officevpn.config.Messages;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.gui.UiSafe;
 import com.officevpn.model.AuditVerifyResult;
@@ -57,9 +58,9 @@ public final class AuditLogPanel extends VBox {
         HBox header = new HBox(10);
         header.setAlignment(Pos.CENTER_LEFT);
         VBox titleBox = new VBox(2);
-        Label title = new Label("Security Audit Trail (HMAC-SHA256 Chained)");
+        Label title = new Label(Messages.get("admin.audit.title"));
         title.getStyleClass().add("page-title");
-        Label subtitle = new Label("Append-only MySQL security events protected by forward-linked cryptographic integrity proofs");
+        Label subtitle = new Label(Messages.get("admin.audit.subtitle"));
         subtitle.getStyleClass().add("page-subtitle");
         titleBox.getChildren().addAll(title, subtitle);
         Region spacer = new Region();
@@ -85,29 +86,29 @@ public final class AuditLogPanel extends VBox {
         eventFilter.getSelectionModel().selectFirst();
         eventFilter.setPrefWidth(220);
 
-        Button searchBtn = new Button("Search");
-        searchBtn.getStyleClass().add("btn-primary");
-        searchBtn.setOnAction(e -> refresh());
+        Button searchLogButton = new Button(Messages.get("admin.audit.button.search"));
+        searchLogButton.getStyleClass().add("btn-primary");
+        searchLogButton.setOnAction(e -> refresh());
 
-        Button clearBtn = new Button("Reset");
-        clearBtn.getStyleClass().add("btn-secondary");
-        clearBtn.setOnAction(e -> {
+        Button resetFiltersButton = new Button(Messages.get("admin.audit.button.reset"));
+        resetFiltersButton.getStyleClass().add("btn-secondary");
+        resetFiltersButton.setOnAction(e -> {
             usernameFilter.clear();
             eventFilter.getSelectionModel().selectFirst();
             refresh();
         });
 
-        Button verifyBtn = new Button("Verify Hash Chain");
-        verifyBtn.getStyleClass().add("btn-success");
-        verifyBtn.setOnAction(e -> runChainVerify());
+        Button verifyChainButton = new Button(Messages.get("admin.audit.button.verify"));
+        verifyChainButton.getStyleClass().add("btn-success");
+        verifyChainButton.setOnAction(e -> runChainVerify());
 
-        Button exportCsvBtn = new Button("Export CSV...");
-        exportCsvBtn.getStyleClass().add("btn-secondary");
-        exportCsvBtn.setOnAction(e -> handleExportCsv());
+        Button exportLogButton = new Button(Messages.get("admin.audit.button.export"));
+        exportLogButton.getStyleClass().add("btn-secondary");
+        exportLogButton.setOnAction(e -> handleExportCsv());
 
         Region tbSpacer = new Region();
         HBox.setHgrow(tbSpacer, Priority.ALWAYS);
-        toolbar.getChildren().addAll(usernameFilter, eventFilter, searchBtn, clearBtn, tbSpacer, verifyBtn, exportCsvBtn);
+        toolbar.getChildren().addAll(usernameFilter, eventFilter, searchLogButton, resetFiltersButton, tbSpacer, verifyChainButton, exportLogButton);
 
         UiSafe.configureSafeTable(table);
         table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("Seq", e -> String.valueOf(e.seq()), 58), 48, 65));
@@ -172,7 +173,7 @@ public final class AuditLogPanel extends VBox {
 
     private void handleExportCsv() {
         FileChooser fc = new FileChooser();
-        fc.setTitle("Export Audit Trail to CSV");
+        fc.setTitle(Messages.get("admin.audit.dialog.export.title"));
         fc.setInitialFileName("officevpn-audit-trail.csv");
         fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV Files", "*.csv"));
         File file = fc.showSaveDialog(UiSafe.windowOf(this));

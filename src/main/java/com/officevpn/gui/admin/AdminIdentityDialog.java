@@ -1,6 +1,7 @@
 package com.officevpn.gui.admin;
 
 import com.officevpn.admin.DemoSeeder;
+import com.officevpn.config.Messages;
 import com.officevpn.gui.UiSafe;
 import com.officevpn.security.IdentityException;
 import com.officevpn.security.ServerIdentity;
@@ -46,7 +47,7 @@ public final class AdminIdentityDialog {
             }
         }
 
-        Path ksPath = dataDir.resolve("server_identity.p12");
+        Path ksPath = dataDir.resolve(ServerIdentity.IDENTITY_FILE_NAME);
         boolean exists = Files.exists(ksPath);
 
         Stage stage = new Stage();
@@ -56,25 +57,29 @@ public final class AdminIdentityDialog {
         } else {
             stage.initModality(Modality.APPLICATION_MODAL);
         }
-        stage.setTitle(exists ? "Unlock Server RSA Identity Keystore" : "Initialize Server RSA Identity Keystore");
+        stage.setTitle(exists
+                ? com.officevpn.config.Messages.get("app.title.admin.identity.unlock")
+                : com.officevpn.config.Messages.get("app.title.admin.identity.create"));
         stage.setResizable(false);
 
-        Label title = new Label(exists ? "Unlock Encrypted Gateway Identity" : "Create Gateway RSA-2048 Keystore");
+        Label title = new Label(exists
+                ? com.officevpn.config.Messages.get("admin.identity.unlock.header")
+                : com.officevpn.config.Messages.get("admin.identity.create.header"));
         title.getStyleClass().add("page-title");
 
         Label subtitle = new Label(exists
-                ? "Enter the passphrase protecting " + ksPath.toString() + " to sign client handshakes."
-                : "Create a passphrase-protected PKCS#12 keystore (" + ksPath + ") for gateway RSASSA-PSS identity.");
+                ? com.officevpn.config.Messages.format("admin.identity.unlock.sub", ksPath.toString())
+                : com.officevpn.config.Messages.format("admin.identity.create.sub", ksPath.toString()));
         subtitle.getStyleClass().add("page-subtitle");
         subtitle.setWrapText(true);
 
         PasswordField passField = new PasswordField();
-        passField.setPromptText("Keystore passphrase (min 8 chars)");
+        passField.setPromptText("Keystore passphrase (min " + ServerIdentity.MIN_PASSPHRASE_LENGTH + " chars)");
 
         PasswordField confirmField = new PasswordField();
         confirmField.setPromptText("Confirm keystore passphrase");
 
-        CheckBox ephemeralCheck = new CheckBox("Use temporary ephemeral identity (non-persistent session keypair)");
+        CheckBox ephemeralCheck = new CheckBox(Messages.get("admin.identity.checkbox.ephemeral"));
         ephemeralCheck.setWrapText(true);
         ephemeralCheck.setSelected(false);
         ephemeralCheck.setVisible(!exists || DemoSeeder.isDemoEnabled());
@@ -86,9 +91,9 @@ public final class AdminIdentityDialog {
 
         VBox form = new VBox(10);
         form.getStyleClass().add("card");
-        form.getChildren().addAll(new Label("Keystore Passphrase"), passField);
+        form.getChildren().addAll(new Label(Messages.get("admin.dialog.label.keystorePassphrase")), passField);
         if (!exists) {
-            form.getChildren().addAll(new Label("Confirm Keystore Passphrase"), confirmField);
+            form.getChildren().addAll(new Label(Messages.get("admin.dialog.label.confirmKeystorePassphrase")), confirmField);
         }
         if (!exists || DemoSeeder.isDemoEnabled()) {
             form.getChildren().add(ephemeralCheck);
@@ -100,10 +105,12 @@ public final class AdminIdentityDialog {
             confirmField.setDisable(sel);
         });
 
-        Button cancelBtn = new Button("Cancel");
+        Button cancelBtn = new Button(Messages.get("common.cancel"));
         cancelBtn.getStyleClass().add("btn-secondary");
 
-        Button okBtn = new Button(exists ? "Unlock Identity" : "Create & Unlock");
+        Button okBtn = new Button(exists
+                ? Messages.get("admin.identity.button.unlock")
+                : Messages.get("admin.identity.button.create"));
         okBtn.getStyleClass().add("btn-primary");
         okBtn.setDefaultButton(true);
 
@@ -119,16 +126,17 @@ public final class AdminIdentityDialog {
             }
             char[] pass = passField.getText().toCharArray();
             char[] conf = confirmField.getText().toCharArray();
-            if (pass.length < 8) {
+            if (pass.length < ServerIdentity.MIN_PASSPHRASE_LENGTH) {
                 Arrays.fill(pass, '\0');
                 Arrays.fill(conf, '\0');
-                errorLabel.setText("Keystore passphrase must be at least 8 characters.");
+                errorLabel.setText(Messages.format(
+                        "admin.identity.error.length", ServerIdentity.MIN_PASSPHRASE_LENGTH));
                 return;
             }
             if (!exists && !Arrays.equals(pass, conf)) {
                 Arrays.fill(pass, '\0');
                 Arrays.fill(conf, '\0');
-                errorLabel.setText("Keystore passphrases do not match.");
+                errorLabel.setText(Messages.get("admin.identity.error.mismatch"));
                 return;
             }
             Arrays.fill(conf, '\0');
@@ -149,7 +157,9 @@ public final class AdminIdentityDialog {
             }).whenComplete((id, err) -> Platform.runLater(() -> {
                 okBtn.setDisable(false);
                 cancelBtn.setDisable(false);
-                okBtn.setText(exists ? "Unlock Identity" : "Create & Unlock");
+                okBtn.setText(exists
+                        ? Messages.get("admin.identity.button.unlock")
+                        : Messages.get("admin.identity.button.create"));
                 if (err != null) {
                     Throwable cause = err.getCause() != null ? err.getCause() : err;
                     errorLabel.setText("Identity error: " + cause.getMessage());

@@ -1,6 +1,7 @@
 package com.officevpn.gui.admin;
 
 import com.officevpn.admin.DeviceManager;
+import com.officevpn.config.Messages;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.gui.UiSafe;
 import javafx.application.Platform;
@@ -56,9 +57,9 @@ public final class DevicesPanel extends VBox {
         HBox header = new HBox(10);
         header.setAlignment(Pos.CENTER_LEFT);
         VBox titleBox = new VBox(2);
-        Label title = new Label("Trusted Hardware Devices");
+        Label title = new Label(Messages.get("admin.devices.title"));
         title.getStyleClass().add("page-title");
-        Label subtitle = new Label("Monitor device fingerprints, enforce per-user enrollment quotas, and trust or revoke hardware");
+        Label subtitle = new Label(Messages.get("admin.devices.subtitle"));
         subtitle.getStyleClass().add("page-subtitle");
         titleBox.getChildren().addAll(title, subtitle);
         Region spacer = new Region();
@@ -68,60 +69,60 @@ public final class DevicesPanel extends VBox {
 
         HBox filterBar = new HBox(10);
         filterBar.setAlignment(Pos.CENTER_LEFT);
-        filterField.setPromptText("Filter by username, device name, or fingerprint...");
+        filterField.setPromptText(Messages.get("admin.devices.search.prompt"));
         filterField.setPrefWidth(320);
         filterField.textProperty().addListener((obs, o, n) -> applyFilter());
 
-        Button refreshBtn = new Button("Refresh");
-        refreshBtn.getStyleClass().add("btn-secondary");
-        refreshBtn.setOnAction(e -> refresh());
+        Button refreshButton = new Button(Messages.get("common.refresh"));
+        refreshButton.getStyleClass().add("btn-secondary");
+        refreshButton.setOnAction(e -> refresh());
 
-        Button enrollBtn = new Button("+ Enroll Device");
-        enrollBtn.getStyleClass().add("btn-primary");
-        enrollBtn.setOnAction(e -> handleEnrollDialog());
+        Button enrollDeviceButton = new Button(Messages.get("admin.devices.button.enroll"));
+        enrollDeviceButton.getStyleClass().add("btn-primary");
+        enrollDeviceButton.setOnAction(e -> handleEnrollDialog());
 
         Region fSpacer = new Region();
         HBox.setHgrow(fSpacer, Priority.ALWAYS);
-        filterBar.getChildren().addAll(filterField, refreshBtn, fSpacer, enrollBtn);
+        filterBar.getChildren().addAll(filterField, refreshButton, fSpacer, enrollDeviceButton);
 
         FlowPane actionBar = new FlowPane(8, 8);
-        Button trustBtn = new Button("Trust Selected");
-        trustBtn.getStyleClass().add("btn-success");
-        Button revokeBtn = new Button("Revoke Selected");
-        revokeBtn.getStyleClass().add("btn-warning");
-        Button copyFpBtn = new Button("Copy Fingerprint");
-        Button deleteBtn = new Button("Delete Record");
-        deleteBtn.getStyleClass().add("btn-danger");
+        Button trustDeviceButton = new Button(Messages.get("admin.devices.button.trust"));
+        trustDeviceButton.getStyleClass().add("btn-success");
+        Button revokeDeviceButton = new Button(Messages.get("admin.devices.button.revoke"));
+        revokeDeviceButton.getStyleClass().add("btn-warning");
+        Button copyFingerprintButton = new Button(Messages.get("admin.devices.button.copyFp"));
+        Button deleteDeviceButton = new Button(Messages.get("admin.devices.button.delete"));
+        deleteDeviceButton.getStyleClass().add("btn-danger");
 
-        List<Button> selBtns = List.of(trustBtn, revokeBtn, copyFpBtn, deleteBtn);
+        List<Button> selBtns = List.of(trustDeviceButton, revokeDeviceButton, copyFingerprintButton, deleteDeviceButton);
         selBtns.forEach(b -> b.setDisable(true));
         table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> {
             boolean has = sel != null;
             selBtns.forEach(b -> b.setDisable(!has));
         });
 
-        trustBtn.setOnAction(e -> {
+        trustDeviceButton.setOnAction(e -> {
             var d = table.getSelectionModel().getSelectedItem();
             if (d == null) return;
             CompletableFuture.runAsync(() -> deviceManager.trustDevice(d.username(), d.deviceFingerprint()))
                     .thenRun(() -> Platform.runLater(this::refresh));
         });
 
-        revokeBtn.setOnAction(e -> {
+        revokeDeviceButton.setOnAction(e -> {
             var d = table.getSelectionModel().getSelectedItem();
             if (d == null) return;
             CompletableFuture.runAsync(() -> deviceManager.revokeDevice(d.username(), d.deviceFingerprint()))
                     .thenRun(() -> Platform.runLater(this::refresh));
         });
 
-        copyFpBtn.setOnAction(e -> {
+        copyFingerprintButton.setOnAction(e -> {
             var d = table.getSelectionModel().getSelectedItem();
             if (d != null) {
                 UiSafe.copyToClipboard(d.deviceFingerprint());
             }
         });
 
-        deleteBtn.setOnAction(e -> {
+        deleteDeviceButton.setOnAction(e -> {
             var d = table.getSelectionModel().getSelectedItem();
             if (d == null) return;
             if (UiSafe.showConfirm(UiSafe.windowOf(this), "Delete Device Record",
@@ -132,7 +133,7 @@ public final class DevicesPanel extends VBox {
             }
         });
 
-        actionBar.getChildren().addAll(trustBtn, revokeBtn, copyFpBtn, deleteBtn);
+        actionBar.getChildren().addAll(trustDeviceButton, revokeDeviceButton, copyFingerprintButton, deleteDeviceButton);
 
         UiSafe.configureSafeTable(table);
         table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("ID", d -> String.valueOf(d.id()), 55), 45, 65));
@@ -161,14 +162,15 @@ public final class DevicesPanel extends VBox {
         nameField.setPromptText("Workstation label (e.g. Corp-Laptop-04)");
 
         VBox box = new VBox(8,
-                new Label("Username"), userField,
-                new Label("Device Fingerprint"), fpField,
-                new Label("Device Name"), nameField
+                new Label(Messages.get("common.label.username")), userField,
+                new Label(Messages.get("admin.devices.dialog.enroll.label.fp")), fpField,
+                new Label(Messages.get("admin.devices.dialog.enroll.label.name")), nameField
         );
         box.setPrefWidth(420);
-        Dialog<ButtonType> dialog = UiSafe.createDialog(UiSafe.windowOf(this), "Enroll Trusted Device",
-                "Manually enroll & trust a hardware fingerprint", box);
-        ButtonType addType = new ButtonType("Enroll Device", ButtonBar.ButtonData.OK_DONE);
+        Dialog<ButtonType> dialog = UiSafe.createDialog(UiSafe.windowOf(this),
+                Messages.get("admin.devices.dialog.enroll.title"),
+                Messages.get("admin.devices.dialog.enroll.header"), box);
+        ButtonType addType = new ButtonType(Messages.get("admin.devices.button.enroll"), ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(addType, ButtonType.CANCEL);
         UiSafe.stylePrimaryDialogButton(dialog, addType);
 

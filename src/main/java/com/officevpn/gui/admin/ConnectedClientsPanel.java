@@ -1,5 +1,6 @@
 package com.officevpn.gui.admin;
 
+import com.officevpn.config.Messages;
 import com.officevpn.gui.UiSafe;
 import com.officevpn.model.UserAccount;
 import com.officevpn.server.VpnGatewayServer;
@@ -69,9 +70,9 @@ public final class ConnectedClientsPanel extends VBox {
         HBox header = new HBox(10);
         header.setAlignment(Pos.CENTER_LEFT);
         VBox titleBox = new VBox(2);
-        Label title = new Label("Live Connected VPN Sessions");
+        Label title = new Label(Messages.get("admin.clients.title"));
         title.getStyleClass().add("page-title");
-        Label subtitle = new Label("Active authenticated tunnels, assigned 10.8.0.x virtual IPs, and real-time revocation controls");
+        Label subtitle = new Label(Messages.get("admin.clients.subtitle"));
         subtitle.getStyleClass().add("page-subtitle");
         titleBox.getChildren().addAll(title, subtitle);
         Region spacer = new Region();
@@ -81,27 +82,30 @@ public final class ConnectedClientsPanel extends VBox {
 
         HBox toolbar = new HBox(10);
         toolbar.setAlignment(Pos.CENTER_LEFT);
-        searchField.setPromptText("Search by username, department, or IP...");
+        searchField.setPromptText(Messages.get("admin.clients.search.prompt"));
         searchField.setPrefWidth(280);
         searchField.textProperty().addListener((obs, o, n) -> applyFilter());
 
-        Button refreshBtn = new Button("Refresh");
-        refreshBtn.getStyleClass().add("btn-secondary");
-        refreshBtn.setOnAction(e -> refresh());
+        Button refreshButton = new Button(Messages.get("common.refresh"));
+        refreshButton.getStyleClass().add("btn-secondary");
+        Messages.configureAccessibleControl(refreshButton, Messages.get("common.refresh"), null);
+        refreshButton.setOnAction(e -> refresh());
 
-        Button copyIpBtn = new Button("Copy Virtual IP");
-        copyIpBtn.getStyleClass().add("btn-secondary");
-        copyIpBtn.setDisable(true);
-        copyIpBtn.setOnAction(e -> {
+        Button copyVirtualIpButton = new Button(Messages.get("admin.clients.button.copyIp"));
+        copyVirtualIpButton.getStyleClass().add("btn-secondary");
+        copyVirtualIpButton.setDisable(true);
+        Messages.configureAccessibleControl(copyVirtualIpButton, Messages.get("admin.clients.button.copyIp"), null);
+        copyVirtualIpButton.setOnAction(e -> {
             SessionRow row = table.getSelectionModel().getSelectedItem();
             if (row != null) {
                 UiSafe.copyToClipboard(row.virtualIp());
             }
         });
 
-        Button broadcastBtn = new Button("Broadcast Notice");
-        broadcastBtn.getStyleClass().add("btn-primary");
-        broadcastBtn.setOnAction(e -> {
+        Button broadcastNoticeButton = new Button(Messages.get("admin.clients.button.broadcast"));
+        broadcastNoticeButton.getStyleClass().add("btn-primary");
+        Messages.configureAccessibleControl(broadcastNoticeButton, Messages.get("admin.clients.button.broadcast"), null);
+        broadcastNoticeButton.setOnAction(e -> {
             VpnGatewayServer srv = this.gatewayServer;
             if (srv == null || !srv.isRunning()) {
                 UiSafe.showWarning(UiSafe.windowOf(this), "Gateway Offline", "Start the VPN gateway before broadcasting notices.");
@@ -118,34 +122,21 @@ public final class ConnectedClientsPanel extends VBox {
             });
         });
 
-        Button disconnectBtn = new Button("Force Disconnect");
-        disconnectBtn.getStyleClass().add("btn-danger");
-        disconnectBtn.setDisable(true);
-        disconnectBtn.setOnAction(e -> {
-            SessionRow selected = table.getSelectionModel().getSelectedItem();
-            VpnGatewayServer srv = this.gatewayServer;
-            if (selected == null || srv == null) {
-                return;
-            }
-            boolean ok = UiSafe.showConfirm(UiSafe.windowOf(this),
-                    "Force Disconnect Client",
-                    "Terminate active VPN session for '" + selected.username() + "'?",
-                    "The client socket will be closed and the virtual IP (" + selected.virtualIp() + ") reclaimed.");
-            if (ok) {
-                srv.disconnectUser(selected.username(), "Administratively terminated via dashboard", adminUsername);
-                refresh();
-            }
-        });
+        Button revokeAccessButton = new Button(Messages.get("admin.clients.button.revoke"));
+        revokeAccessButton.getStyleClass().add("btn-danger");
+        revokeAccessButton.setDisable(true);
+        Messages.configureAccessibleControl(revokeAccessButton, Messages.get("admin.clients.button.revoke"), null);
+        revokeAccessButton.setOnAction(e -> handleRevokeSelectedSession());
 
         table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> {
             boolean hasSel = sel != null;
-            disconnectBtn.setDisable(!hasSel);
-            copyIpBtn.setDisable(!hasSel);
+            revokeAccessButton.setDisable(!hasSel);
+            copyVirtualIpButton.setDisable(!hasSel);
         });
 
         Region tbSpacer = new Region();
         HBox.setHgrow(tbSpacer, Priority.ALWAYS);
-        toolbar.getChildren().addAll(searchField, refreshBtn, tbSpacer, copyIpBtn, broadcastBtn, disconnectBtn);
+        toolbar.getChildren().addAll(searchField, refreshButton, tbSpacer, copyVirtualIpButton, broadcastNoticeButton, revokeAccessButton);
 
         UiSafe.configureSafeTable(table);
         table.getColumns().add(UiSafe.safeColumn("Username", SessionRow::username, 140));
@@ -164,6 +155,22 @@ public final class ConnectedClientsPanel extends VBox {
         VBox.setVgrow(card, Priority.ALWAYS);
 
         getChildren().addAll(header, card);
+    }
+
+    private void handleRevokeSelectedSession() {
+        SessionRow selected = table.getSelectionModel().getSelectedItem();
+        VpnGatewayServer srv = this.gatewayServer;
+        if (selected == null || srv == null) {
+            return;
+        }
+        boolean ok = UiSafe.showConfirm(UiSafe.windowOf(this),
+                "Revoke Client Access",
+                "Terminate active VPN session for '" + selected.username() + "'?",
+                "The client socket will be closed and the virtual IP (" + selected.virtualIp() + ") reclaimed.");
+        if (ok) {
+            srv.disconnectUser(selected.username(), "Administratively terminated via dashboard", adminUsername);
+            refresh();
+        }
     }
 
     public void refresh() {

@@ -2,6 +2,7 @@ package com.officevpn.gui.client;
 
 import com.officevpn.client.VpnClientEngine;
 import com.officevpn.config.ConfigUtil;
+import com.officevpn.config.Messages;
 import com.officevpn.gui.UiSafe;
 import com.officevpn.security.TrustedFingerprintStore;
 import javafx.application.Platform;
@@ -26,25 +27,25 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 /**
- * JavaFX Encrypted VPN Client Login, TOFU Pinning &amp; 2FA Authentication Window.
+ * JavaFX Encrypted VPN Client Sign-In, TOFU Pinning &amp; 2FA Authentication Window.
  */
 public final class LoginFrame {
 
     private final Stage stage;
     private final TrustedFingerprintStore fingerprintStore;
 
-    private final TextField hostField = new TextField(ConfigUtil.getClientDefaultHost());
-    private final TextField portField = new TextField(String.valueOf(ConfigUtil.getPort()));
-    private final TextField expectedFpField = new TextField();
+    private final TextField gatewayHostField = new TextField(ConfigUtil.getClientDefaultHost());
+    private final TextField gatewayPortField = new TextField(String.valueOf(ConfigUtil.getPort()));
+    private final TextField expectedFingerprintField = new TextField();
     private final TextField usernameField = new TextField();
     private final PasswordField passwordField = new PasswordField();
-    private final TextField totpField = new TextField();
+    private final TextField totpCodeField = new TextField();
 
     private final Label pinStatusLabel = new Label("");
     private final Label errorLabel = new Label("");
     private final ProgressBar progressBar = new ProgressBar(0);
-    private final Button connectBtn = new Button("Connect & Establish Encrypted Tunnel");
-    private final Button clearPinBtn = new Button("Clear Pin");
+    private final Button connectButton = new Button(Messages.get("login.client.button.connect"));
+    private final Button clearPinButton = new Button(Messages.get("login.client.button.clearPin"));
 
     public LoginFrame(Stage stage) {
         this(stage, TrustedFingerprintStore.getDefault());
@@ -69,66 +70,68 @@ public final class LoginFrame {
         root.setPrefWidth(520);
 
         VBox headerBox = new VBox(4);
-        Label title = new Label("Office VPN Secure Client");
-        title.getStyleClass().add("page-title");
-        Label subtitle = new Label("OFFICE-VPN-2.0 Hybrid ECDH PFS · RSASSA-PSS TOFU · AES-256-GCM Tunnel");
-        subtitle.getStyleClass().add("page-subtitle");
-        headerBox.getChildren().addAll(title, subtitle);
+        Label titleLabel = new Label(Messages.get("login.client.heading"));
+        titleLabel.getStyleClass().add("page-title");
+        Label subtitleLabel = new Label(Messages.get("login.client.subheading"));
+        subtitleLabel.getStyleClass().add("page-subtitle");
+        headerBox.getChildren().addAll(titleLabel, subtitleLabel);
 
-        GridPane netGrid = new GridPane();
-        netGrid.setHgap(12);
-        netGrid.setVgap(8);
+        GridPane networkGrid = new GridPane();
+        networkGrid.setHgap(12);
+        networkGrid.setVgap(8);
         ColumnConstraints c0 = new ColumnConstraints();
         c0.setPercentWidth(70);
         ColumnConstraints c1 = new ColumnConstraints();
         c1.setPercentWidth(30);
-        netGrid.getColumnConstraints().addAll(c0, c1);
+        networkGrid.getColumnConstraints().addAll(c0, c1);
 
-        hostField.setPromptText("Gateway host or IP");
-        portField.setPromptText(String.valueOf(ConfigUtil.getPort()));
-        hostField.textProperty().addListener((obs, o, n) -> refreshStoredPinIndicator());
-        portField.textProperty().addListener((obs, o, n) -> refreshStoredPinIndicator());
+        gatewayHostField.setPromptText(Messages.get("login.client.prompt.host"));
+        gatewayPortField.setPromptText(String.valueOf(ConfigUtil.getPort()));
+        Messages.configureAccessibleControl(gatewayHostField, Messages.get("login.client.label.host"), null);
+        Messages.configureAccessibleControl(gatewayPortField, Messages.get("login.client.label.port"), null);
+        gatewayHostField.textProperty().addListener((obs, o, n) -> refreshStoredPinIndicator());
+        gatewayPortField.textProperty().addListener((obs, o, n) -> refreshStoredPinIndicator());
 
-        netGrid.add(new Label("Gateway Host"), 0, 0);
-        netGrid.add(new Label("Port"), 1, 0);
-        netGrid.add(hostField, 0, 1);
-        netGrid.add(portField, 1, 1);
+        networkGrid.add(new Label(Messages.get("login.client.label.host")), 0, 0);
+        networkGrid.add(new Label(Messages.get("login.client.label.port")), 1, 0);
+        networkGrid.add(gatewayHostField, 0, 1);
+        networkGrid.add(gatewayPortField, 1, 1);
 
-        expectedFpField.setPromptText("Optional expected SHA-256 hex fingerprint for strict first-use pinning");
-        expectedFpField.getStyleClass().add("mono-text");
+        expectedFingerprintField.setPromptText(Messages.get("login.client.prompt.expectedFp"));
+        expectedFingerprintField.getStyleClass().add("mono-text");
+        Messages.configureAccessibleControl(expectedFingerprintField, Messages.get("login.client.label.expectedFp"), null);
 
         pinStatusLabel.getStyleClass().add("muted-label");
-        clearPinBtn.getStyleClass().add("btn-secondary");
-        clearPinBtn.setOnAction(e -> {
-            String host = safeHost();
-            int port = safePort();
-            if (port > 0) {
-                fingerprintStore.removePin(host, port);
-                refreshStoredPinIndicator();
-            }
-        });
-        HBox pinRow = new HBox(10, pinStatusLabel, new Region(), clearPinBtn);
+        clearPinButton.getStyleClass().add("btn-secondary");
+        Messages.configureAccessibleControl(clearPinButton,
+                Messages.get("login.client.button.clearPin"),
+                Messages.get("login.client.tooltip.clearPin"));
+        clearPinButton.setOnAction(e -> handleClearPin());
+        HBox pinRow = new HBox(10, pinStatusLabel, new Region(), clearPinButton);
         HBox.setHgrow(pinRow.getChildren().get(1), Priority.ALWAYS);
         pinRow.setAlignment(Pos.CENTER_LEFT);
 
         VBox gatewayCard = new VBox(8,
-                new Label("GATEWAY ENDPOINT & IDENTITY PINNING"),
-                netGrid,
-                new Label("Expected Server Fingerprint (Optional TOFU Pre-Check)"),
-                expectedFpField,
+                new Label(Messages.get("login.client.section.gateway")),
+                networkGrid,
+                new Label(Messages.get("login.client.label.expectedFp")),
+                expectedFingerprintField,
                 pinRow
         );
         gatewayCard.getStyleClass().add("card");
 
-        usernameField.setPromptText("e.g. alice_fin or admin_hq");
-        passwordField.setPromptText("Account passphrase");
-        totpField.setPromptText("Optional 6-digit TOTP 2FA code (if MFA enabled)");
+        usernameField.setPromptText(Messages.get("login.client.prompt.username"));
+        passwordField.setPromptText(Messages.get("login.client.prompt.password"));
+        totpCodeField.setPromptText(Messages.get("login.client.prompt.totp"));
+        Messages.configureAccessibleControl(usernameField, Messages.get("login.client.label.username"), null);
+        Messages.configureAccessibleControl(passwordField, Messages.get("login.client.label.password"), null);
+        Messages.configureAccessibleControl(totpCodeField, Messages.get("login.client.label.totp"), null);
 
         VBox authCard = new VBox(8,
-                new Label("ZERO-TRUST CREDENTIALS"),
-                new Label("Username"), usernameField,
-                new Label("Passphrase"), passwordField,
-                new Label("Authenticator 2FA Code (Optional)"), totpField
+                new Label(Messages.get("login.client.section.credentials")),
+                new Label(Messages.get("login.client.label.username")), usernameField,
+                new Label(Messages.get("login.client.label.password")), passwordField,
+                new Label(Messages.get("login.client.label.totp")), totpCodeField
         );
         authCard.getStyleClass().add("card");
 
@@ -139,73 +142,85 @@ public final class LoginFrame {
         progressBar.setPrefHeight(6);
         progressBar.setVisible(false);
 
-        connectBtn.getStyleClass().add("btn-primary");
-        connectBtn.setMaxWidth(Double.MAX_VALUE);
-        connectBtn.setDefaultButton(true);
-        connectBtn.setOnAction(e -> initiateLogin());
+        connectButton.getStyleClass().add("btn-primary");
+        connectButton.setMaxWidth(Double.MAX_VALUE);
+        connectButton.setDefaultButton(true);
+        Messages.configureAccessibleControl(connectButton,
+                Messages.get("login.client.button.connect"),
+                Messages.get("login.client.tooltip.connect"));
+        connectButton.setOnAction(e -> handleConnect());
 
-        root.getChildren().addAll(headerBox, gatewayCard, authCard, errorLabel, progressBar, connectBtn);
+        root.getChildren().addAll(headerBox, gatewayCard, authCard, errorLabel, progressBar, connectButton);
 
         Scene scene = new Scene(root);
         UiSafe.applyTheme(scene);
-        stage.setTitle("Office VPN Client — Encrypted Access Portal");
+        stage.setTitle(Messages.get("app.title.client.login"));
         stage.setResizable(false);
         stage.setScene(scene);
         stage.setOnCloseRequest(e -> Platform.exit());
+    }
+
+    private void handleClearPin() {
+        String host = safeHost();
+        int port = safePort();
+        if (port > 0) {
+            fingerprintStore.removePin(host, port);
+            refreshStoredPinIndicator();
+        }
     }
 
     private void refreshStoredPinIndicator() {
         String host = safeHost();
         int port = safePort();
         if (host.isEmpty() || port <= 0) {
-            pinStatusLabel.setText("Enter valid host and port.");
-            clearPinBtn.setDisable(true);
+            pinStatusLabel.setText(Messages.get("login.client.pin.invalidEndpoint"));
+            clearPinButton.setDisable(true);
             return;
         }
         Optional<String> existing = fingerprintStore.getPinnedFingerprint(host, port);
         if (existing.isPresent()) {
             String fp = existing.get();
             String preview = fp.length() > 24 ? fp.substring(0, 24) + "..." : fp;
-            pinStatusLabel.setText("Stored TOFU Pin: " + preview);
-            clearPinBtn.setDisable(false);
+            pinStatusLabel.setText(Messages.format("login.client.pin.stored", preview));
+            clearPinButton.setDisable(false);
         } else {
-            pinStatusLabel.setText("No saved pin for " + host + ":" + port + " (TOFU on connect)");
-            clearPinBtn.setDisable(true);
+            pinStatusLabel.setText(Messages.format("login.client.pin.none", host, String.valueOf(port)));
+            clearPinButton.setDisable(true);
         }
     }
 
     private String safeHost() {
-        return hostField.getText() != null ? hostField.getText().trim() : "";
+        return gatewayHostField.getText() != null ? gatewayHostField.getText().trim() : "";
     }
 
     private int safePort() {
         try {
-            int p = Integer.parseInt(portField.getText().trim());
+            int p = Integer.parseInt(gatewayPortField.getText().trim());
             return (p >= 1 && p <= 65535) ? p : -1;
         } catch (Exception e) {
             return -1;
         }
     }
 
-    private void initiateLogin() {
+    private void handleConnect() {
         String host = safeHost();
         int port = safePort();
         String username = usernameField.getText() != null ? usernameField.getText().trim() : "";
         String password = passwordField.getText() != null ? passwordField.getText() : "";
-        String totp = totpField.getText() != null ? totpField.getText().trim() : "";
-        String typedFp = expectedFpField.getText() != null ? expectedFpField.getText().trim() : "";
+        String totp = totpCodeField.getText() != null ? totpCodeField.getText().trim() : "";
+        String typedFp = expectedFingerprintField.getText() != null ? expectedFingerprintField.getText().trim() : "";
 
         if (host.isEmpty() || port <= 0) {
-            errorLabel.setText("Enter a valid gateway host and port (1-65535).");
+            errorLabel.setText(Messages.get("login.client.error.invalidEndpoint"));
             return;
         }
         if (username.isEmpty() || password.isEmpty()) {
-            errorLabel.setText("Username and passphrase are required.");
+            errorLabel.setText(Messages.get("login.client.error.missingCredentials"));
             return;
         }
 
         errorLabel.setText("");
-        setBusy(true, "Performing ECDH Handshake & Verify...");
+        setBusy(true, Messages.get("login.client.button.connecting"));
 
         CompletableFuture.supplyAsync(() -> connectAndAuthenticate(host, port, typedFp, username, password, totp))
                 .whenComplete((engine, err) -> Platform.runLater(() -> {
@@ -252,7 +267,7 @@ public final class LoginFrame {
         try {
             boolean authed = activeEngine.login(username, password, totp.isEmpty() ? null : totp);
             if (!authed) {
-                throw new SecurityException("Authentication rejected: invalid credentials, TOTP code, untrusted device, or account locked.");
+                throw new SecurityException(Messages.get("login.client.error.authRejected"));
             }
             handoff = true;
             return activeEngine;
@@ -285,9 +300,9 @@ public final class LoginFrame {
         CompletableFuture<Boolean> decision = new CompletableFuture<>();
         Platform.runLater(() -> {
             boolean yes = UiSafe.showConfirm(stage,
-                    "SECURITY WARNING: Server Key Changed",
-                    "The gateway server's RSA public key fingerprint differs from your stored TOFU pin!",
-                    details + "\n\nOnly click OK if the gateway identity was intentionally rotated by your administrator.");
+                    Messages.get("login.client.warning.pinChanged.title"),
+                    Messages.get("login.client.warning.pinChanged.header"),
+                    details + "\n\n" + Messages.get("login.client.warning.pinChanged.footer"));
             decision.complete(yes);
         });
         try {
@@ -301,16 +316,16 @@ public final class LoginFrame {
     }
 
     private void setBusy(boolean busy, String text) {
-        hostField.setDisable(busy);
-        portField.setDisable(busy);
-        expectedFpField.setDisable(busy);
+        gatewayHostField.setDisable(busy);
+        gatewayPortField.setDisable(busy);
+        expectedFingerprintField.setDisable(busy);
         usernameField.setDisable(busy);
         passwordField.setDisable(busy);
-        totpField.setDisable(busy);
-        clearPinBtn.setDisable(busy);
-        connectBtn.setDisable(busy);
+        totpCodeField.setDisable(busy);
+        clearPinButton.setDisable(busy);
+        connectButton.setDisable(busy);
         progressBar.setVisible(busy);
         progressBar.setProgress(busy ? ProgressBar.INDETERMINATE_PROGRESS : 0);
-        connectBtn.setText(busy ? text : "Connect & Establish Encrypted Tunnel");
+        connectButton.setText(busy ? text : Messages.get("login.client.button.connect"));
     }
 }

@@ -1,6 +1,8 @@
 package com.officevpn.gui.client;
 
 import com.officevpn.client.VpnClientEngine;
+import com.officevpn.config.ConfigUtil;
+import com.officevpn.config.Messages;
 import com.officevpn.gui.UiSafe;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -30,7 +32,7 @@ public final class ChatPanel extends VBox {
     private final VpnClientEngine engine;
     private final TextArea chatFeed = new TextArea();
     private final TextField composer = new TextField();
-    private final Label statusPill = new Label("AES-256-GCM E2E Wire");
+    private final Label statusPill = new Label(Messages.get("chat.pill.wire"));
 
     public ChatPanel(VpnClientEngine engine) {
         this.engine = engine;
@@ -43,9 +45,9 @@ public final class ChatPanel extends VBox {
         HBox header = new HBox(10);
         header.setAlignment(Pos.CENTER_LEFT);
         VBox titleBox = new VBox(2);
-        Label title = new Label("Secure Office Intranet Chat");
+        Label title = new Label(Messages.get("chat.title"));
         title.getStyleClass().add("page-title");
-        Label subtitle = new Label("Real-time encrypted departmental messaging and gateway broadcast channel");
+        Label subtitle = new Label(Messages.get("chat.subtitle"));
         subtitle.getStyleClass().add("page-subtitle");
         titleBox.getChildren().addAll(title, subtitle);
         Region spacer = new Region();
@@ -56,24 +58,31 @@ public final class ChatPanel extends VBox {
         chatFeed.setEditable(false);
         chatFeed.setWrapText(true);
         chatFeed.getStyleClass().add("chat-area");
-        chatFeed.setText("=== Connected to Encrypted Intranet Channel (10.8.0.1) ===\n");
+        chatFeed.setText(Messages.format("chat.welcome", ConfigUtil.getGatewayVirtualIp()));
         VBox.setVgrow(chatFeed, Priority.ALWAYS);
 
-        composer.setPromptText("Write an encrypted message to online office colleagues...");
+        composer.setPromptText(Messages.get("chat.prompt"));
+        Messages.configureAccessibleControl(composer, Messages.get("chat.prompt"), null);
         HBox.setHgrow(composer, Priority.ALWAYS);
 
-        Button sendBtn = new Button("Send Encrypted");
-        sendBtn.getStyleClass().add("btn-primary");
+        Button sendButton = new Button(Messages.get("chat.button.send"));
+        sendButton.getStyleClass().add("btn-primary");
+        Messages.configureAccessibleControl(sendButton,
+                Messages.get("chat.button.send"),
+                Messages.get("chat.tooltip.send"));
 
-        Button clearBtn = new Button("Clear");
-        clearBtn.getStyleClass().add("btn-secondary");
-        clearBtn.setOnAction(e -> chatFeed.clear());
+        Button clearButton = new Button(Messages.get("chat.button.clear"));
+        clearButton.getStyleClass().add("btn-secondary");
+        Messages.configureAccessibleControl(clearButton,
+                Messages.get("chat.button.clear"),
+                Messages.get("chat.tooltip.clear"));
+        clearButton.setOnAction(e -> chatFeed.clear());
 
         Runnable sendAction = () -> {
             String msg = composer.getText() != null ? composer.getText().trim() : "";
             if (msg.isEmpty()) return;
             composer.setDisable(true);
-            sendBtn.setDisable(true);
+            sendButton.setDisable(true);
             CompletableFuture.runAsync(() -> {
                 try {
                     engine.sendChatMessage(msg);
@@ -82,10 +91,10 @@ public final class ChatPanel extends VBox {
                 }
             }).whenComplete((v, err) -> Platform.runLater(() -> {
                 composer.setDisable(false);
-                sendBtn.setDisable(false);
+                sendButton.setDisable(false);
                 if (err != null) {
                     Throwable cause = err.getCause() != null ? err.getCause() : err;
-                    UiSafe.showError(UiSafe.windowOf(this), "Chat Send Failed", cause.getMessage());
+                    UiSafe.showError(UiSafe.windowOf(this), "Message Send Failed", cause.getMessage());
                 } else {
                     composer.clear();
                     composer.requestFocus();
@@ -93,10 +102,10 @@ public final class ChatPanel extends VBox {
             }));
         };
 
-        sendBtn.setOnAction(e -> sendAction.run());
+        sendButton.setOnAction(e -> sendAction.run());
         composer.setOnAction(e -> sendAction.run());
 
-        HBox composerBar = new HBox(10, composer, sendBtn, clearBtn);
+        HBox composerBar = new HBox(10, composer, sendButton, clearButton);
         composerBar.setAlignment(Pos.CENTER_LEFT);
 
         VBox card = new VBox(12, chatFeed, composerBar);

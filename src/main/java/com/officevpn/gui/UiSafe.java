@@ -1,5 +1,6 @@
 package com.officevpn.gui;
 
+import com.officevpn.config.Messages;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.Node;
@@ -91,7 +92,7 @@ public final class UiSafe {
             return;
         }
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-        Label placeholder = new Label("No records to display");
+        Label placeholder = new Label(Messages.get("common.table.empty"));
         placeholder.getStyleClass().add("muted-label");
         table.setPlaceholder(placeholder);
     }

@@ -2,6 +2,7 @@ package com.officevpn.gui.admin;
 
 import com.officevpn.admin.AdminLoginPolicy;
 import com.officevpn.admin.DemoSeeder;
+import com.officevpn.config.Messages;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.gui.UiSafe;
 import com.officevpn.model.Role;
@@ -47,13 +48,13 @@ public final class AdminLoginDialog {
         } else {
             stage.initModality(Modality.APPLICATION_MODAL);
         }
-        stage.setTitle("Office VPN — Headquarters Administrator Login");
+        stage.setTitle(Messages.get("app.title.admin.login"));
         stage.setResizable(false);
 
-        Label title = new Label("Gateway Governance Sign-In");
+        Label title = new Label(Messages.get("admin.login.header"));
         title.getStyleClass().add("page-title");
 
-        Label subtitle = new Label("Authenticate with a Headquarters ADMIN account backed by MySQL.");
+        Label subtitle = new Label(Messages.get("admin.login.sub"));
         subtitle.getStyleClass().add("page-subtitle");
         subtitle.setWrapText(true);
 
@@ -74,7 +75,7 @@ public final class AdminLoginDialog {
 
         VBox demoBanner = null;
         if (seededDemoAccounts != null && !seededDemoAccounts.isEmpty()) {
-            Label demoHdr = new Label("DEMO MODE ACTIVE — Seeded Test Credentials");
+            Label demoHdr = new Label(Messages.get("admin.login.demo.badge"));
             demoHdr.getStyleClass().addAll("pill", "pill-warning");
 
             StringBuilder sb = new StringBuilder();
@@ -91,7 +92,7 @@ public final class AdminLoginDialog {
             credsBox.getStyleClass().add("console-area");
             credsBox.setPrefRowCount(Math.min(6, seededDemoAccounts.size() + 1));
 
-            Button fillBtn = new Button("Auto-Fill HQ Admin");
+            Button fillBtn = new Button(Messages.get("admin.login.demo.autofill"));
             fillBtn.getStyleClass().add("btn-secondary");
             final DemoSeeder.DemoAccount finalAdmin = adminAccount;
             fillBtn.setOnAction(e -> {
@@ -105,30 +106,30 @@ public final class AdminLoginDialog {
             demoBanner.getStyleClass().add("card");
         }
 
-        Button cancelBtn = new Button("Exit");
-        cancelBtn.getStyleClass().add("btn-secondary");
+        Button cancelButton = new Button(Messages.get("common.exit"));
+        cancelButton.getStyleClass().add("btn-secondary");
 
-        Button loginBtn = new Button("Authenticate & Launch");
-        loginBtn.getStyleClass().add("btn-primary");
-        loginBtn.setDefaultButton(true);
+        Button signInButton = new Button(Messages.get("admin.login.button.signIn"));
+        signInButton.getStyleClass().add("btn-primary");
+        signInButton.setDefaultButton(true);
 
         final UserAccount[] authenticatedRef = new UserAccount[1];
 
-        cancelBtn.setOnAction(e -> stage.close());
+        cancelButton.setOnAction(e -> stage.close());
 
-        loginBtn.setOnAction(e -> {
+        signInButton.setOnAction(e -> {
             String uname = userField.getText() != null ? userField.getText().trim() : "";
             char[] pw = passField.getText().toCharArray();
             if (uname.isEmpty() || pw.length == 0) {
                 Arrays.fill(pw, '\0');
-                errorLabel.setText("Username and passphrase are required.");
+                errorLabel.setText(Messages.get("login.client.error.missingCredentials"));
                 return;
             }
 
             errorLabel.setText("");
-            loginBtn.setDisable(true);
-            cancelBtn.setDisable(true);
-            loginBtn.setText("Verifying (PBKDF2)...");
+            signInButton.setDisable(true);
+            cancelButton.setDisable(true);
+            signInButton.setText("Verifying (PBKDF2)...");
 
             CompletableFuture.supplyAsync(() -> {
                 try {
@@ -137,9 +138,9 @@ public final class AdminLoginDialog {
                     Arrays.fill(pw, '\0');
                 }
             }).whenComplete((account, err) -> Platform.runLater(() -> {
-                loginBtn.setDisable(false);
-                cancelBtn.setDisable(false);
-                loginBtn.setText("Authenticate & Launch");
+                signInButton.setDisable(false);
+                cancelButton.setDisable(false);
+                signInButton.setText(Messages.get("admin.login.button.signIn"));
                 if (err != null) {
                     Throwable cause = err.getCause() != null ? err.getCause() : err;
                     errorLabel.setText("Authentication error: " + cause.getMessage());
@@ -157,11 +158,11 @@ public final class AdminLoginDialog {
         HBox actions = new HBox(10);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        actions.getChildren().addAll(spacer, cancelBtn, loginBtn);
+        actions.getChildren().addAll(spacer, cancelButton, signInButton);
 
         VBox formCard = new VBox(10,
-                new Label("Administrator Username"), userField,
-                new Label("Passphrase"), passField,
+                new Label(Messages.get("admin.dialog.label.adminUsername")), userField,
+                new Label(Messages.get("admin.dialog.label.passphrase")), passField,
                 errorLabel
         );
         formCard.getStyleClass().add("card");

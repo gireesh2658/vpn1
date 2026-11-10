@@ -886,12 +886,68 @@ public final class DatabaseManager implements AutoCloseable {
             salt = CryptoUtils.generateSalt();
         }
 
+        String actorClean = (actor == null || actor.isBlank()) ? "SYSTEM" : actor.trim();
+        return persistPasswordHash(username.trim(), hash, salt, "ADMIN_PASSWORD_RESET",
+                "password reset", actorClean, "local");
+    }
+
+    /**
+     * Allows an authenticated active user to change their own password after verifying the current one.
+     *
+     * @param username        Target username
+     * @param currentPassword Current password char array
+     * @param newPassword     New password char array
+     * @param remoteIp        Client IP address for audit trail
+     * @return True if updated; false if current password verification fails
+     */
+    public boolean changeOwnPassword(String username, char[] currentPassword, char[] newPassword, String remoteIp) {
+        Objects.requireNonNull(username, "Username cannot be null");
+        Objects.requireNonNull(currentPassword, "Current password cannot be null");
+        Objects.requireNonNull(newPassword, "New password cannot be null");
+
+        String cleanUser = username.trim();
+        UserRowSnapshot snapshot;
+        synchronized (this) {
+            try (Connection conn = openConnection()) {
+                snapshot = fetchUserSnapshot(conn, cleanUser);
+            } catch (SQLException e) {
+                throw new IllegalStateException("Database connection error reading user account: " + e.getMessage(), e);
+            }
+        }
+        if (snapshot == null || !snapshot.isActive()) {
+            throw new IllegalArgumentException("Active account not found: " + cleanUser);
+        }
+
+        if (!passwordVerifier.verify(currentPassword, snapshot.hash(), snapshot.salt())) {
+            logAuditEvent("USER_PASSWORD_CHANGE_FAILED", snapshot.canonicalUsername(), snapshot.department().name(),
+                    "Current password verification failed", snapshot.canonicalUsername(),
+                    remoteIp != null ? remoteIp : "local");
+            return false;
+        }
+
+        PasswordPolicy.validatePassword(newPassword, snapshot.canonicalUsername());
+        if (java.util.Arrays.equals(currentPassword, newPassword)) {
+            throw new IllegalArgumentException("New password must differ from your current password");
+        }
+
+        String hash = passwordHasher.hash(newPassword);
+        String salt = CryptoUtils.parseStoredHash(hash).saltB64();
+        if (salt == null || salt.isBlank()) {
+            salt = CryptoUtils.generateSalt();
+        }
+        return persistPasswordHash(snapshot.canonicalUsername(), hash, salt, "USER_PASSWORD_CHANGED",
+                "Self-service password updated by user", snapshot.canonicalUsername(),
+                remoteIp != null && !remoteIp.isBlank() ? remoteIp : "local");
+    }
+
+    private boolean persistPasswordHash(String username, String hash, String salt,
+                                        String eventType, String details, String actor, String remoteIp) {
         synchronized (this) {
             try (Connection conn = openConnection()) {
                 boolean oldAutoCommit = conn.getAutoCommit();
                 conn.setAutoCommit(false);
                 try {
-                    UserAccount user = getUserByUsername(conn, username.trim());
+                    UserAccount user = getUserByUsername(conn, username);
                     if (user == null) {
                         throw new IllegalArgumentException("User not found: " + username);
                     }
@@ -901,14 +957,13 @@ public final class DatabaseManager implements AutoCloseable {
                     try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                         pstmt.setString(1, salt);
                         pstmt.setString(2, hash);
-                        pstmt.setString(3, username.trim());
+                        pstmt.setString(3, username);
                         updated = pstmt.executeUpdate();
                     }
 
                     if (updated > 0) {
-                        String actorClean = (actor == null || actor.isBlank()) ? "SYSTEM" : actor.trim();
-                        logAuditEventOrThrow(conn, "ADMIN_PASSWORD_RESET", username.trim(), user.department().name(),
-                                "password reset", actorClean, "local");
+                        logAuditEventOrThrow(conn, eventType, user.username(), user.department().name(),
+                                details, actor, remoteIp);
                         conn.commit();
                         return true;
                     }
@@ -918,12 +973,12 @@ public final class DatabaseManager implements AutoCloseable {
                     rollbackQuietly(conn);
                     if (e instanceof AuditUnavailableException aue) throw aue;
                     if (e instanceof RuntimeException re) throw re;
-                    throw new IllegalStateException("Failed to reset password: " + e.getMessage(), e);
+                    throw new IllegalStateException("Failed to update password: " + e.getMessage(), e);
                 } finally {
                     restoreAutoCommitQuietly(conn, oldAutoCommit);
                 }
             } catch (SQLException e) {
-                throw new IllegalStateException("Database connection error resetting password: " + e.getMessage(), e);
+                throw new IllegalStateException("Database connection error updating password: " + e.getMessage(), e);
             }
         }
     }
