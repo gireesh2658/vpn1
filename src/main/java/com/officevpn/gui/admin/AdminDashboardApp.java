@@ -56,8 +56,12 @@ public final class AdminDashboardApp {
                 db = new DatabaseManager();
             } catch (Exception ex) {
                 UiSafe.showError(null, "MySQL Initialization Failed",
-                        "Unable to initialize MySQL persistence (" + ConfigUtil.getDbUrl() + ").\n\n"
-                                + "Ensure MySQL / MariaDB is running and credentials in config.properties are valid.\n\nDetails: "
+                        "Unable to connect to MySQL / MariaDB ("
+                                + ConfigUtil.getString("db.host", "127.0.0.1") + ":"
+                                + ConfigUtil.getInt("db.port", 3306) + "/"
+                                + ConfigUtil.getString("db.name", "office_vpn") + ").\n\n"
+                                + "Ensure MySQL / MariaDB is running (e.g., start MySQL in XAMPP Control Panel) "
+                                + "and verify credentials in config.properties.\n\nDetails:\n"
                                 + ex.getMessage());
                 Platform.exit();
                 return;
