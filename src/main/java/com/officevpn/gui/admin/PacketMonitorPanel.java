@@ -75,11 +75,11 @@ public final class PacketMonitorPanel extends VBox {
 
         directionFilter.getItems().addAll("ALL DIRECTIONS", "INBOUND", "OUTBOUND");
         directionFilter.getSelectionModel().selectFirst();
-        directionFilter.setOnAction(e -> rerender());
+        directionFilter.setOnAction(_ -> rerender());
 
         Button clearCaptureButton = new Button(Messages.get("admin.sniffer.button.clear"));
         clearCaptureButton.getStyleClass().add("btn-danger");
-        clearCaptureButton.setOnAction(e -> {
+        clearCaptureButton.setOnAction(_ -> {
             buffer.clear();
             table.getItems().clear();
             totalCount = 0;

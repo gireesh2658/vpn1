@@ -77,7 +77,7 @@ public final class OverviewPanel extends VBox {
         Button refreshMetricsButton = new Button(Messages.get("admin.overview.button.refresh"));
         refreshMetricsButton.getStyleClass().add("btn-secondary");
         Messages.configureAccessibleControl(refreshMetricsButton, Messages.get("admin.overview.button.refresh"), null);
-        refreshMetricsButton.setOnAction(e -> refresh());
+        refreshMetricsButton.setOnAction(_ -> refresh());
         headerRow.getChildren().addAll(titleBox, spacer, refreshMetricsButton);
 
         GridPane kpiGrid = new GridPane();
@@ -108,7 +108,7 @@ public final class OverviewPanel extends VBox {
         Button copyFingerprintButton = new Button(Messages.get("admin.overview.button.copyFp"));
         copyFingerprintButton.getStyleClass().add("btn-secondary");
         Messages.configureAccessibleControl(copyFingerprintButton, Messages.get("admin.overview.button.copyFp"), null);
-        copyFingerprintButton.setOnAction(e -> UiSafe.copyToClipboard(fingerprintLabel.getText()));
+        copyFingerprintButton.setOnAction(_ -> UiSafe.copyToClipboard(fingerprintLabel.getText()));
         fpHeader.getChildren().addAll(fpTitle, fpSpacer, copyFingerprintButton);
 
         fingerprintLabel.getStyleClass().add("mono-text");

@@ -234,7 +234,7 @@ public final class AdminDashboardFrame {
             btn.setText(label);
         }
 
-        btn.setOnAction(e -> switchView(label, targetView));
+        btn.setOnAction(_ -> switchView(label, targetView));
         navButtons.put(label, btn);
         return btn;
     }
@@ -254,32 +254,32 @@ public final class AdminDashboardFrame {
         Messages.configureAccessibleControl(startGatewayButton,
                 Messages.get("admin.button.startGateway"),
                 Messages.get("admin.tooltip.startGateway"));
-        startGatewayButton.setOnAction(e -> startGatewayAsync());
+        startGatewayButton.setOnAction(_ -> startGatewayAsync());
 
         stopGatewayButton.getStyleClass().add("btn-danger");
         Messages.configureAccessibleControl(stopGatewayButton,
                 Messages.get("admin.button.stopGateway"),
                 Messages.get("admin.tooltip.stopGateway"));
-        stopGatewayButton.setOnAction(e -> stopGatewayAsync());
+        stopGatewayButton.setOnAction(_ -> stopGatewayAsync());
 
         restartGatewayButton.getStyleClass().add("btn-warning");
         Messages.configureAccessibleControl(restartGatewayButton,
                 Messages.get("admin.button.restartGateway"),
                 Messages.get("admin.tooltip.restartGateway"));
-        restartGatewayButton.setOnAction(e -> restartGatewayAsync());
+        restartGatewayButton.setOnAction(_ -> restartGatewayAsync());
 
         Button refreshAllButton = new Button(Messages.get("admin.button.refreshAll"));
         refreshAllButton.getStyleClass().add("btn-secondary");
         Messages.configureAccessibleControl(refreshAllButton,
                 Messages.get("admin.button.refreshAll"),
                 Messages.get("admin.tooltip.refreshAll"));
-        refreshAllButton.setOnAction(e -> refreshAllViews());
+        refreshAllButton.setOnAction(_ -> refreshAllViews());
 
         openAtelierButton.getStyleClass().add("btn-secondary");
         Messages.configureAccessibleControl(openAtelierButton,
                 Messages.get("admin.button.openAtelier"),
                 Messages.get("admin.tooltip.openAtelier"));
-        openAtelierButton.setOnAction(e -> handleOpenAtelierGovernance());
+        openAtelierButton.setOnAction(_ -> handleOpenAtelierGovernance());
 
         topbar.getChildren().addAll(
                 serverStatePill, dbBadge, spacer,
@@ -355,7 +355,7 @@ public final class AdminDashboardFrame {
         atelierStage.setMinWidth(960);
         atelierStage.setMinHeight(640);
         atelierStage.setScene(scene);
-        atelierStage.setOnHidden(e -> {
+        atelierStage.setOnHidden(_ -> {
             shell.close();
             if (atelierService != null) {
                 atelierService.close();
@@ -374,7 +374,7 @@ public final class AdminDashboardFrame {
             } catch (Exception ex) {
                 throw new IllegalStateException(ex.getMessage(), ex);
             }
-        }).whenComplete((v, err) -> Platform.runLater(() -> {
+        }).whenComplete((_, err) -> Platform.runLater(() -> {
             if (err != null) {
                 Throwable cause = err.getCause() != null ? err.getCause() : err;
                 UiSafe.showError(stage, "Gateway Start Failed", cause.getMessage());
@@ -401,7 +401,7 @@ public final class AdminDashboardFrame {
             } catch (Exception ex) {
                 throw new IllegalStateException(ex.getMessage(), ex);
             }
-        }).whenComplete((v, err) -> Platform.runLater(() -> {
+        }).whenComplete((_, err) -> Platform.runLater(() -> {
             if (err != null) {
                 Throwable cause = err.getCause() != null ? err.getCause() : err;
                 UiSafe.showError(stage, "Gateway Restart Failed", cause.getMessage());
@@ -461,7 +461,7 @@ public final class AdminDashboardFrame {
     }
 
     private void startAutoRefreshLoop() {
-        refreshTimeline = new Timeline(new KeyFrame(Duration.seconds(2), e -> {
+        refreshTimeline = new Timeline(new KeyFrame(Duration.seconds(2), _ -> {
             overviewPanel.refresh();
             connectedClientsPanel.refresh();
             updateServerControlStates();

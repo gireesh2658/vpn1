@@ -72,7 +72,7 @@ public final class AdminBootstrapDialog {
         errorLabel.setStyle("-fx-text-fill: #BA2A1A; -fx-font-weight: bold;");
         errorLabel.setWrapText(true);
 
-        passField.textProperty().addListener((obs, o, n) -> updateStrength(n, strengthBar, strengthLabel));
+        passField.textProperty().addListener((_, _, n) -> updateStrength(n, strengthBar, strengthLabel));
 
         Button cancelButton = new Button(Messages.get("common.exit"));
         cancelButton.getStyleClass().add("btn-secondary");
@@ -83,9 +83,9 @@ public final class AdminBootstrapDialog {
 
         final UserAccount[] createdRef = new UserAccount[1];
 
-        cancelButton.setOnAction(e -> stage.close());
+        cancelButton.setOnAction(_ -> stage.close());
 
-        createAdminButton.setOnAction(e -> {
+        createAdminButton.setOnAction(_ -> {
             String uname = userField.getText() != null ? userField.getText().trim() : "";
             char[] pw = passField.getText().toCharArray();
             char[] confirm = confirmField.getText().toCharArray();

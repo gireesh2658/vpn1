@@ -127,7 +127,7 @@ public final class UiSafe {
         col.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty(
                 text(textExtractor.apply(cellData.getValue()), 64)
         ));
-        col.setCellFactory(tc -> new TableCell<>() {
+        col.setCellFactory(_ -> new TableCell<>() {
             @Override
             protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);

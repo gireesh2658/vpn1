@@ -197,8 +197,8 @@ public final class AppShell extends StackPane implements AutoCloseable {
     }
 
     private void wireLiveEngineSync() {
-        service.connectionStateProperty().addListener((obs, o, st) -> syncAuthDrivenViews());
-        service.virtualIpProperty().addListener((obs, o, v) -> syncAuthDrivenViews());
+        service.connectionStateProperty().addListener((_, _, _) -> syncAuthDrivenViews());
+        service.virtualIpProperty().addListener((_, _, _) -> syncAuthDrivenViews());
 
         if (backend != null) {
             VpnClientEngine eng = backend.getEngine();
@@ -330,7 +330,7 @@ public final class AppShell extends StackPane implements AutoCloseable {
             btn.setPadding(new Insets(7, 11, 7, 11));
             btn.setMaxWidth(Double.MAX_VALUE);
             btn.setGraphicTextGap(10);
-            btn.setOnAction(e -> switchTo(s));
+            btn.setOnAction(_ -> switchTo(s));
             navButtons.put(s, btn);
             buttonsList.getChildren().add(btn);
         }
@@ -352,7 +352,7 @@ public final class AppShell extends StackPane implements AutoCloseable {
         Button cmdBtn = new Button("Quick Command", Icons.ink(Feather.COMMAND, 13));
         cmdBtn.getStyleClass().add("ia-pill-sand");
         cmdBtn.setMaxWidth(Double.MAX_VALUE);
-        cmdBtn.setOnAction(e -> openCommandPalette());
+        cmdBtn.setOnAction(_ -> openCommandPalette());
 
         Label statusChip = new Label("Disconnected");
         statusChip.getStyleClass().addAll("ia-pill", "ia-pill-sand");
@@ -360,9 +360,9 @@ public final class AppShell extends StackPane implements AutoCloseable {
         Label vipChip = new Label("VIP " + service.virtualIpProperty().get());
         vipChip.getStyleClass().add("ia-mono-soft");
 
-        service.connectionStateProperty().addListener((obs, o, n) -> syncFooterChip(statusChip, vipChip, n));
-        service.selectedGatewayProperty().addListener((obs, o, n) -> syncFooterChip(statusChip, vipChip, service.connectionStateProperty().get()));
-        service.virtualIpProperty().addListener((obs, o, n) -> syncFooterChip(statusChip, vipChip, service.connectionStateProperty().get()));
+        service.connectionStateProperty().addListener((_, _, n) -> syncFooterChip(statusChip, vipChip, n));
+        service.selectedGatewayProperty().addListener((_, _, _) -> syncFooterChip(statusChip, vipChip, service.connectionStateProperty().get()));
+        service.virtualIpProperty().addListener((_, _, _) -> syncFooterChip(statusChip, vipChip, service.connectionStateProperty().get()));
         syncFooterChip(statusChip, vipChip, service.connectionStateProperty().get());
 
         VBox statusCard = new VBox(5, statusChip, vipChip);
@@ -443,11 +443,11 @@ public final class AppShell extends StackPane implements AutoCloseable {
 
         Button pingBtn = new Button("Test Ping", Icons.peacock(Feather.ACTIVITY, 13));
         pingBtn.getStyleClass().add("ia-btn-peacock");
-        pingBtn.setOnAction(e -> handleTestPing());
+        pingBtn.setOnAction(_ -> handleTestPing());
 
         Button killBtn = new Button("Toggle Kill Switch", Icons.coral(Feather.SHIELD_OFF, 13));
         killBtn.getStyleClass().add("ia-btn-coral");
-        killBtn.setOnAction(e -> {
+        killBtn.setOnAction(_ -> {
             boolean next = !service.killSwitchEnabledProperty().get();
             service.killSwitchEnabledProperty().set(next);
             pushToast(next ? Toasts.Severity.WARNING : Toasts.Severity.INFO,
@@ -535,7 +535,7 @@ public final class AppShell extends StackPane implements AutoCloseable {
                 bentoHost.getChildren().setAll(bento);
             }
         };
-        sc.widthProperty().addListener((obs, o, n) -> applyResponsiveBento.run());
+        sc.widthProperty().addListener((_, _, _) -> applyResponsiveBento.run());
         applyResponsiveBento.run();
         return sc;
     }
@@ -590,10 +590,10 @@ public final class AppShell extends StackPane implements AutoCloseable {
             }
             updatePinStatus.run();
         };
-        hostField.textProperty().addListener((obs, o, n) -> applyEndpoint.run());
-        portField.textProperty().addListener((obs, o, n) -> applyEndpoint.run());
-        expectedFpField.textProperty().addListener((obs, o, n) -> applyEndpoint.run());
-        clearPinBtn.setOnAction(e -> {
+        hostField.textProperty().addListener((_, _, _) -> applyEndpoint.run());
+        portField.textProperty().addListener((_, _, _) -> applyEndpoint.run());
+        expectedFpField.textProperty().addListener((_, _, _) -> applyEndpoint.run());
+        clearPinBtn.setOnAction(_ -> {
             if (backend != null) {
                 backend.clearGatewayPin(hostField.getText(), parsePort(portField.getText()));
                 updatePinStatus.run();
@@ -646,20 +646,20 @@ public final class AppShell extends StackPane implements AutoCloseable {
         homeSessionPingLabel.getStyleClass().add("ia-subtitle");
 
         Button copyVipBtn = new Button("Copy Virtual IP", Icons.ink(Feather.COPY, 13));
-        copyVipBtn.setOnAction(e -> {
+        copyVipBtn.setOnAction(_ -> {
             UiSafe.copyToClipboard(service.virtualIpProperty().get());
             pushToast(Toasts.Severity.INFO, "Copied Virtual IP", service.virtualIpProperty().get());
         });
         Button sessionPingBtn = new Button("Test Ping", Icons.peacock(Feather.ACTIVITY, 13));
         sessionPingBtn.getStyleClass().add("ia-btn-peacock");
-        sessionPingBtn.setOnAction(e -> handleTestPing());
+        sessionPingBtn.setOnAction(_ -> handleTestPing());
 
         Button changePwBtn = new Button("Change Password", Icons.ink(Feather.KEY, 13));
-        changePwBtn.setOnAction(e -> handleChangePassword());
+        changePwBtn.setOnAction(_ -> handleChangePassword());
 
         Button disconnectBtn = new Button("Disconnect", Icons.coral(Feather.POWER, 13));
         disconnectBtn.getStyleClass().add("ia-btn-coral");
-        disconnectBtn.setOnAction(e -> service.disconnect());
+        disconnectBtn.setOnAction(_ -> service.disconnect());
 
         HBox actionRow1 = new HBox(8, copyVipBtn, sessionPingBtn);
         HBox actionRow2 = new HBox(8, changePwBtn, disconnectBtn);
@@ -725,7 +725,7 @@ public final class AppShell extends StackPane implements AutoCloseable {
 
         Button changePwBtn = new Button("Change My Password Over Tunnel", Icons.ink(Feather.LOCK, 13));
         changePwBtn.getStyleClass().add("ia-btn-marigold");
-        changePwBtn.setOnAction(e -> handleChangePassword());
+        changePwBtn.setOnAction(_ -> handleChangePassword());
 
         VBox mfaContent = new VBox(10, mfaTitle, mfaBody, changePwBtn);
         mfaContent.setPadding(new Insets(16));
@@ -799,11 +799,11 @@ public final class AppShell extends StackPane implements AutoCloseable {
 
         Button openTrayBtn = new Button("Open TrayFlyout Mini-Panel", Icons.peacock(Feather.SIDEBAR, 14));
         openTrayBtn.getStyleClass().add("ia-btn-peacock");
-        openTrayBtn.setOnAction(e -> trayFlyout.showFlyout(service, this::requestFocus, () -> {}));
+        openTrayBtn.setOnAction(_ -> trayFlyout.showFlyout(service, this::requestFocus, () -> {}));
 
         Button changePwBtn = new Button("Change Account Password", Icons.ink(Feather.KEY, 14));
         changePwBtn.getStyleClass().add("ia-btn-marigold");
-        changePwBtn.setOnAction(e -> handleChangePassword());
+        changePwBtn.setOnAction(_ -> handleChangePassword());
 
         Screen primary = Screen.getPrimary();
         Label dpiInfo = new Label(String.format("Detected OS Scale: %.0f%% (OutputScale %.2fx) • Bundled Fonts: Fraunces + Manrope + JetBrains Mono (OFL)",
@@ -894,7 +894,7 @@ public final class AppShell extends StackPane implements AutoCloseable {
             Arrays.fill(confPw, '\0');
         }
 
-        backend.changePassword(curPw, newPw).whenComplete((v, err) -> {
+        backend.changePassword(curPw, newPw).whenComplete((_, err) -> {
             Arrays.fill(curPw, '\0');
             Arrays.fill(newPw, '\0');
             Platform.runLater(() -> {

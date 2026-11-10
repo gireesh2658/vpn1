@@ -77,7 +77,7 @@ public final class ConnectionStatusPanel extends VBox {
         Messages.configureAccessibleControl(refreshButton,
                 Messages.get("tunnel.button.sync"),
                 Messages.get("tunnel.tooltip.sync"));
-        refreshButton.setOnAction(e -> refreshControls());
+        refreshButton.setOnAction(_ -> refreshControls());
         header.getChildren().addAll(titleBox, spacer, refreshButton);
 
         GridPane controlsGrid = new GridPane();
@@ -101,7 +101,7 @@ public final class ConnectionStatusPanel extends VBox {
         Messages.configureAccessibleControl(switchTunnelModeButton,
                 Messages.get("tunnel.button.switchFull"),
                 Messages.get("tunnel.tooltip.switchMode"));
-        switchTunnelModeButton.setOnAction(e -> {
+        switchTunnelModeButton.setOnAction(_ -> {
             TunnelManager tm = engine.getTunnelManager();
             if (tm == null) return;
             TunnelManager.TunnelMode next = (tm.getMode() == TunnelManager.TunnelMode.FULL)
@@ -126,7 +126,7 @@ public final class ConnectionStatusPanel extends VBox {
         Messages.configureAccessibleControl(killSwitchButton,
                 Messages.get("tunnel.button.enableKillSwitch"),
                 Messages.get("tunnel.tooltip.killSwitch"));
-        killSwitchButton.setOnAction(e -> {
+        killSwitchButton.setOnAction(_ -> {
             KillSwitchManager ks = engine.getKillSwitchManager();
             if (ks == null) return;
             if (ks.getState() == KillSwitchManager.State.DISABLED) {
@@ -149,7 +149,7 @@ public final class ConnectionStatusPanel extends VBox {
         dnsGuardPill.getStyleClass().addAll("pill", "pill-success");
         autoReconnectCheck.setSelected(engine.getAutoReconnectManager() != null && engine.getAutoReconnectManager().isEnabled());
         Messages.configureAccessibleControl(autoReconnectCheck, Messages.get("tunnel.check.autoReconnect"), null);
-        autoReconnectCheck.setOnAction(e -> {
+        autoReconnectCheck.setOnAction(_ -> {
             boolean en = autoReconnectCheck.isSelected();
             engine.setAutoReconnect(en);
             appendStateMessage("Auto-reconnect set to " + (en ? "ENABLED" : "DISABLED"));
@@ -178,13 +178,13 @@ public final class ConnectionStatusPanel extends VBox {
         Messages.configureAccessibleControl(copyLogButton,
                 Messages.get("tunnel.button.copyLog"),
                 Messages.get("tunnel.tooltip.copyLog"));
-        copyLogButton.setOnAction(e -> UiSafe.copyToClipboard(telemetryConsole.getText()));
+        copyLogButton.setOnAction(_ -> UiSafe.copyToClipboard(telemetryConsole.getText()));
         Button clearLogButton = new Button(Messages.get("tunnel.button.clearLog"));
         clearLogButton.getStyleClass().add("btn-danger");
         Messages.configureAccessibleControl(clearLogButton,
                 Messages.get("tunnel.button.clearLog"),
                 Messages.get("tunnel.tooltip.clearLog"));
-        clearLogButton.setOnAction(e -> {
+        clearLogButton.setOnAction(_ -> {
             lineBuffer.clear();
             telemetryConsole.clear();
         });

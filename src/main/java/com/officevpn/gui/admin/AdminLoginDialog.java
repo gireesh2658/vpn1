@@ -85,9 +85,9 @@ public final class AdminLoginDialog {
 
         final UserAccount[] authenticatedRef = new UserAccount[1];
 
-        cancelButton.setOnAction(e -> stage.close());
+        cancelButton.setOnAction(_ -> stage.close());
 
-        signInButton.setOnAction(e -> {
+        signInButton.setOnAction(_ -> {
             String uname = userField.getText() != null ? userField.getText().trim() : "";
             char[] pw = passField.getText().toCharArray();
             String totp = totpField.getText() != null ? totpField.getText().trim() : "";

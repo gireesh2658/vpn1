@@ -62,7 +62,7 @@ public final class PulseRibbon extends Control {
         setAccessibleRole(AccessibleRole.TEXT);
         setMinSize(260, Region.USE_PREF_SIZE);
 
-        connected.addListener((obs, o, n) -> pseudoClassStateChanged(PC_LIVE, Boolean.TRUE.equals(n)));
+        connected.addListener((_, _, n) -> pseudoClassStateChanged(PC_LIVE, Boolean.TRUE.equals(n)));
     }
 
     public void bindService(VpnClientService service) {
@@ -73,7 +73,7 @@ public final class PulseRibbon extends Control {
         connected.bind(service.connectionStateProperty().isEqualTo(ConnectionState.CONNECTED));
 
         Runnable copy = () -> series.setAll(service.throughputSeries());
-        service.throughputSeries().addListener((ListChangeListener<ThroughputSample>) c -> copy.run());
+        service.throughputSeries().addListener((ListChangeListener<ThroughputSample>) _ -> copy.run());
         copy.run();
     }
 
@@ -126,7 +126,7 @@ public final class PulseRibbon extends Control {
             Rectangle clip = new Rectangle(84, 34);
             roller.setClip(clip);
 
-            animatedNumber.addListener((obs, o, n) -> updateText(n.doubleValue()));
+            animatedNumber.addListener((_, _, n) -> updateText(n.doubleValue()));
             getChildren().addAll(arrow, roller, dotDecimal, unitLabel);
         }
 
@@ -215,21 +215,21 @@ public final class PulseRibbon extends Control {
             root.getChildren().addAll(topBar, countersRow, canvasBox);
             getChildren().add(root);
 
-            control.downloadMbpsProperty().addListener((obs, o, n) -> downMetric.setTarget(n.doubleValue()));
-            control.uploadMbpsProperty().addListener((obs, o, n) -> upMetric.setTarget(n.doubleValue()));
-            control.latencyMsProperty().addListener((obs, o, n) -> {
+            control.downloadMbpsProperty().addListener((_, _, n) -> downMetric.setTarget(n.doubleValue()));
+            control.uploadMbpsProperty().addListener((_, _, n) -> upMetric.setTarget(n.doubleValue()));
+            control.latencyMsProperty().addListener((_, _, n) -> {
                 rttPill.setText(n.intValue() + " ms RTT");
                 control.setAccessibleText("Pulse Ribbon throughput down " + control.downloadMbpsProperty().get()
                         + " Mbps, up " + control.uploadMbpsProperty().get() + " Mbps, latency " + n.intValue() + " ms");
             });
 
-            control.series().addListener((ListChangeListener<ThroughputSample>) c -> drawChart());
-            canvasBox.widthProperty().addListener((obs, o, n) -> {
+            control.series().addListener((ListChangeListener<ThroughputSample>) _ -> drawChart());
+            canvasBox.widthProperty().addListener((_, _, n) -> {
                 chartCanvas.setWidth(Math.max(120, n.doubleValue() - 6));
                 chartCanvas.relocate(3, 3);
                 drawChart();
             });
-            canvasBox.heightProperty().addListener((obs, o, n) -> {
+            canvasBox.heightProperty().addListener((_, _, n) -> {
                 chartCanvas.setHeight(Math.max(96, n.doubleValue() - 6));
                 chartCanvas.relocate(3, 3);
                 drawChart();
@@ -244,7 +244,7 @@ public final class PulseRibbon extends Control {
                 updateScrubReadout(pts);
                 drawChart();
             });
-            chartCanvas.setOnMouseExited(e -> {
+            chartCanvas.setOnMouseExited(_ -> {
                 scrubIndex = -1;
                 scrubReadout.setText("60s live ribbon");
                 drawChart();

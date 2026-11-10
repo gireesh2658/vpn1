@@ -87,18 +87,18 @@ public final class ConnectedClientsPanel extends VBox {
         toolbar.setAlignment(Pos.CENTER_LEFT);
         searchField.setPromptText(Messages.get("admin.clients.search.prompt"));
         searchField.setPrefWidth(280);
-        searchField.textProperty().addListener((obs, o, n) -> applyFilter());
+        searchField.textProperty().addListener((_, _, _) -> applyFilter());
 
         Button refreshButton = new Button(Messages.get("common.refresh"));
         refreshButton.getStyleClass().add("btn-secondary");
         Messages.configureAccessibleControl(refreshButton, Messages.get("common.refresh"), null);
-        refreshButton.setOnAction(e -> refresh());
+        refreshButton.setOnAction(_ -> refresh());
 
         Button copyVirtualIpButton = new Button(Messages.get("admin.clients.button.copyIp"));
         copyVirtualIpButton.getStyleClass().add("btn-secondary");
         copyVirtualIpButton.setDisable(true);
         Messages.configureAccessibleControl(copyVirtualIpButton, Messages.get("admin.clients.button.copyIp"), null);
-        copyVirtualIpButton.setOnAction(e -> {
+        copyVirtualIpButton.setOnAction(_ -> {
             SessionRow row = table.getSelectionModel().getSelectedItem();
             if (row != null) {
                 UiSafe.copyToClipboard(row.virtualIp());
@@ -108,7 +108,7 @@ public final class ConnectedClientsPanel extends VBox {
         Button broadcastNoticeButton = new Button(Messages.get("admin.clients.button.broadcast"));
         broadcastNoticeButton.getStyleClass().add("btn-primary");
         Messages.configureAccessibleControl(broadcastNoticeButton, Messages.get("admin.clients.button.broadcast"), null);
-        broadcastNoticeButton.setOnAction(e -> {
+        broadcastNoticeButton.setOnAction(_ -> {
             VpnGatewayServer srv = this.gatewayServer;
             if (srv == null || !srv.isRunning()) {
                 UiSafe.showWarning(UiSafe.windowOf(this), "Gateway Offline", "Start the VPN gateway before broadcasting notices.");
@@ -129,9 +129,9 @@ public final class ConnectedClientsPanel extends VBox {
         revokeAccessButton.getStyleClass().add("btn-danger");
         revokeAccessButton.setDisable(true);
         Messages.configureAccessibleControl(revokeAccessButton, Messages.get("admin.clients.button.revoke"), null);
-        revokeAccessButton.setOnAction(e -> handleRevokeSelectedSession());
+        revokeAccessButton.setOnAction(_ -> handleRevokeSelectedSession());
 
-        table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> {
+        table.getSelectionModel().selectedItemProperty().addListener((_, _, sel) -> {
             boolean hasSel = sel != null;
             revokeAccessButton.setDisable(!hasSel);
             copyVirtualIpButton.setDisable(!hasSel);

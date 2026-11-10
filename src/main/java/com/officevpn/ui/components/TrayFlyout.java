@@ -66,11 +66,11 @@ public final class TrayFlyout {
 
             PopupMenu menu = new PopupMenu();
             MenuItem toggleItem = new MenuItem("Toggle Quick Panel");
-            toggleItem.addActionListener(e -> Platform.runLater(this::toggleFlyout));
+            toggleItem.addActionListener(_ -> Platform.runLater(this::toggleFlyout));
             MenuItem openItem = new MenuItem("Open Office VPN Console");
-            openItem.addActionListener(e -> Platform.runLater(onOpenConsole));
+            openItem.addActionListener(_ -> Platform.runLater(onOpenConsole));
             MenuItem quitItem = new MenuItem("Quit Office VPN");
-            quitItem.addActionListener(e -> Platform.runLater(() -> {
+            quitItem.addActionListener(_ -> Platform.runLater(() -> {
                 uninstall();
                 onQuitApp.run();
             }));
@@ -81,7 +81,7 @@ public final class TrayFlyout {
 
             trayIcon = new TrayIcon(awtImg, "Office VPN — Ivory Atelier", menu);
             trayIcon.setImageAutoSize(true);
-            trayIcon.addActionListener(e -> Platform.runLater(this::toggleFlyout));
+            trayIcon.addActionListener(_ -> Platform.runLater(this::toggleFlyout));
             SystemTray.getSystemTray().add(trayIcon);
             return true;
         } catch (Exception e) {
@@ -142,7 +142,7 @@ public final class TrayFlyout {
         Scene scene = new Scene(content, 336, 268, Color.TRANSPARENT);
         IvoryTheme.apply(scene);
         stage.setScene(scene);
-        stage.focusedProperty().addListener((obs, o, focused) -> {
+        stage.focusedProperty().addListener((_, _, focused) -> {
             if (Boolean.FALSE.equals(focused)) stage.hide();
         });
         this.flyoutStage = stage;
@@ -189,13 +189,13 @@ public final class TrayFlyout {
         openBtn.setGraphic(Icons.ink(Feather.EXTERNAL_LINK, 12));
         HBox.setHgrow(openBtn, Priority.ALWAYS);
         openBtn.setMaxWidth(Double.MAX_VALUE);
-        openBtn.setOnAction(e -> {
+        openBtn.setOnAction(_ -> {
             if (onOpenConsole != null) onOpenConsole.run();
         });
 
         Button quitBtn = new Button("Quit");
         quitBtn.getStyleClass().add("ia-btn-coral");
-        quitBtn.setOnAction(e -> {
+        quitBtn.setOnAction(_ -> {
             if (onQuitApp != null) onQuitApp.run();
         });
 
@@ -230,10 +230,10 @@ public final class TrayFlyout {
                         service.currentUploadMbpsProperty().get(),
                         service.currentLatencyMsProperty().get()));
             };
-            service.connectionStateProperty().addListener((obs, o, n) -> refresh.run());
-            service.selectedGatewayProperty().addListener((obs, o, n) -> refresh.run());
-            service.currentDownloadMbpsProperty().addListener((obs, o, n) -> refresh.run());
-            toggleBtn.setOnAction(e -> {
+            service.connectionStateProperty().addListener((_, _, _) -> refresh.run());
+            service.selectedGatewayProperty().addListener((_, _, _) -> refresh.run());
+            service.currentDownloadMbpsProperty().addListener((_, _, _) -> refresh.run());
+            toggleBtn.setOnAction(_ -> {
                 if (service.connectionStateProperty().get() == ConnectionState.CONNECTED) {
                     service.disconnect();
                 } else if (service.connectionStateProperty().get() == ConnectionState.BLOCKED_BY_KILL_SWITCH) {

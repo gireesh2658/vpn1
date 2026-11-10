@@ -107,28 +107,28 @@ public final class UserManagementPanel extends VBox {
         filterBar.setAlignment(Pos.CENTER_LEFT);
         searchField.setPromptText(Messages.get("admin.users.search.prompt"));
         searchField.setPrefWidth(220);
-        searchField.textProperty().addListener((obs, o, n) -> applyFilter());
+        searchField.textProperty().addListener((_, _, _) -> applyFilter());
 
         deptFilter.getItems().add("ALL DEPARTMENTS");
         for (Department d : Department.values()) {
             deptFilter.getItems().add(d.name());
         }
         deptFilter.getSelectionModel().selectFirst();
-        deptFilter.setOnAction(e -> applyFilter());
+        deptFilter.setOnAction(_ -> applyFilter());
 
         statusFilter.getItems().addAll("ALL STATUS", "ACTIVE ONLY", "DISABLED ONLY");
         statusFilter.getSelectionModel().selectFirst();
-        statusFilter.setOnAction(e -> applyFilter());
+        statusFilter.setOnAction(_ -> applyFilter());
 
         Button refreshButton = new Button(Messages.get("common.refresh"));
         refreshButton.getStyleClass().add("btn-secondary");
         Messages.configureAccessibleControl(refreshButton, Messages.get("common.refresh"), null);
-        refreshButton.setOnAction(e -> refresh());
+        refreshButton.setOnAction(_ -> refresh());
 
         Button addEmployeeButton = new Button(Messages.get("admin.users.button.addEmployee"));
         addEmployeeButton.getStyleClass().add("btn-primary");
         Messages.configureAccessibleControl(addEmployeeButton, Messages.get("admin.users.button.addEmployee"), null);
-        addEmployeeButton.setOnAction(e -> handleCreateUser());
+        addEmployeeButton.setOnAction(_ -> handleCreateUser());
 
         Region fSpacer = new Region();
         HBox.setHgrow(fSpacer, Priority.ALWAYS);
@@ -156,7 +156,7 @@ public final class UserManagementPanel extends VBox {
         );
         selectionButtons.forEach(b -> b.setDisable(true));
 
-        table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> {
+        table.getSelectionModel().selectedItemProperty().addListener((_, _, sel) -> {
             boolean hasSel = sel != null;
             selectionButtons.forEach(b -> b.setDisable(!hasSel));
             if (hasSel) {
@@ -166,15 +166,15 @@ public final class UserManagementPanel extends VBox {
             }
         });
 
-        changePasswordButton.setOnAction(e -> handleResetPassword(selectedUser()));
-        changeRoleButton.setOnAction(e -> handleChangeRole(selectedUser()));
-        changeDepartmentButton.setOnAction(e -> handleChangeDept(selectedUser()));
-        toggleActiveButton.setOnAction(e -> handleToggleActive(selectedUser()));
-        removeEmployeeButton.setOnAction(e -> handleDeleteUser(selectedUser()));
-        unlockAccountButton.setOnAction(e -> handleUnlockAccount(selectedUser()));
-        manageTotpButton.setOnAction(e -> handleManageTotp(selectedRow()));
-        trustAllDevicesButton.setOnAction(e -> handleTrustAllDevices(selectedUser()));
-        revokeDevicesButton.setOnAction(e -> handleRevokeAllDevices(selectedUser()));
+        changePasswordButton.setOnAction(_ -> handleResetPassword(selectedUser()));
+        changeRoleButton.setOnAction(_ -> handleChangeRole(selectedUser()));
+        changeDepartmentButton.setOnAction(_ -> handleChangeDept(selectedUser()));
+        toggleActiveButton.setOnAction(_ -> handleToggleActive(selectedUser()));
+        removeEmployeeButton.setOnAction(_ -> handleDeleteUser(selectedUser()));
+        unlockAccountButton.setOnAction(_ -> handleUnlockAccount(selectedUser()));
+        manageTotpButton.setOnAction(_ -> handleManageTotp(selectedRow()));
+        trustAllDevicesButton.setOnAction(_ -> handleTrustAllDevices(selectedUser()));
+        revokeDevicesButton.setOnAction(_ -> handleRevokeAllDevices(selectedUser()));
 
         actionBar.getChildren().addAll(
                 changePasswordButton, changeRoleButton, changeDepartmentButton, toggleActiveButton,
@@ -260,7 +260,7 @@ public final class UserManagementPanel extends VBox {
 
         Button genBtn = new Button(Messages.get("admin.users.dialog.generate"));
         genBtn.getStyleClass().add("btn-secondary");
-        genBtn.setOnAction(e -> {
+        genBtn.setOnAction(_ -> {
             String generated = PasswordPolicy.generateStrongPassword(16);
             passField.setText(generated);
             genPreview.setText(Messages.get("admin.users.dialog.generatedHidden"));
@@ -337,7 +337,7 @@ public final class UserManagementPanel extends VBox {
 
         Button genBtn = new Button(Messages.get("admin.users.dialog.generate"));
         genBtn.getStyleClass().add("btn-secondary");
-        genBtn.setOnAction(e -> {
+        genBtn.setOnAction(_ -> {
             String generated = PasswordPolicy.generateStrongPassword(16);
             passField.setText(generated);
             genPreview.setText(Messages.get("admin.users.dialog.generatedHidden"));
@@ -495,10 +495,10 @@ public final class UserManagementPanel extends VBox {
 
             Button copyBtn = new Button(Messages.get("admin.users.dialog.totp.copySecret"));
             copyBtn.getStyleClass().add("btn-secondary");
-            copyBtn.setOnAction(e -> UiSafe.copyToClipboard(secret));
+            copyBtn.setOnAction(_ -> UiSafe.copyToClipboard(secret));
             Button copyUriBtn = new Button(Messages.get("admin.users.dialog.totp.copyUri"));
             copyUriBtn.getStyleClass().add("btn-secondary");
-            copyUriBtn.setOnAction(e -> UiSafe.copyToClipboard(uri));
+            copyUriBtn.setOnAction(_ -> UiSafe.copyToClipboard(uri));
 
             TextField testCodeField = new TextField();
             testCodeField.setPromptText("Enter 6-digit code from Authenticator app");
@@ -507,7 +507,7 @@ public final class UserManagementPanel extends VBox {
             testResultLbl.setWrapText(true);
             Button testBtn = new Button("Test 6-Digit Code");
             testBtn.getStyleClass().add("btn-secondary");
-            testBtn.setOnAction(e -> {
+            testBtn.setOnAction(_ -> {
                 String code = testCodeField.getText() != null ? testCodeField.getText().trim() : "";
                 if (TotpUtil.verifyCode(secret, code)) {
                     testResultLbl.setText("Verified! Your Authenticator app matches.");

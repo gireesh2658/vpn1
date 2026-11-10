@@ -99,7 +99,7 @@ public final class ChatPanel extends VBox {
         Messages.configureAccessibleControl(clearButton,
                 Messages.get("chat.button.clear"),
                 Messages.get("chat.tooltip.clear"));
-        clearButton.setOnAction(e -> chatFeed.clear());
+        clearButton.setOnAction(_ -> chatFeed.clear());
 
         Runnable sendAction = () -> {
             String msg = composer.getText() != null ? composer.getText().trim() : "";
@@ -112,7 +112,7 @@ public final class ChatPanel extends VBox {
                 } catch (Exception ex) {
                     throw new IllegalStateException(ex.getMessage(), ex);
                 }
-            }).whenComplete((v, err) -> Platform.runLater(() -> {
+            }).whenComplete((_, err) -> Platform.runLater(() -> {
                 composer.setDisable(false);
                 sendButton.setDisable(false);
                 if (err != null) {
@@ -125,8 +125,8 @@ public final class ChatPanel extends VBox {
             }));
         };
 
-        sendButton.setOnAction(e -> sendAction.run());
-        composer.setOnAction(e -> sendAction.run());
+        sendButton.setOnAction(_ -> sendAction.run());
+        composer.setOnAction(_ -> sendAction.run());
 
         HBox composerBar = new HBox(10, composer, sendButton, clearButton);
         composerBar.setAlignment(Pos.CENTER_LEFT);

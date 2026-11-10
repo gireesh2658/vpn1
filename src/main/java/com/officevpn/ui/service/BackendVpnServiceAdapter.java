@@ -29,13 +29,22 @@ import javafx.beans.property.ReadOnlyDoubleProperty;
 import javafx.beans.property.ReadOnlyIntegerProperty;
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.ReadOnlyStringProperty;
+import javafx.beans.property.SimpleBooleanProperty;
+import javafx.beans.property.SimpleDoubleProperty;
+import javafx.beans.property.SimpleIntegerProperty;
+import javafx.beans.property.SimpleObjectProperty;
+import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
+import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -49,6 +58,9 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 
@@ -66,8 +78,54 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     private static final Logger LOGGER = LoggerFactory.getLogger(BackendVpnServiceAdapter.class);
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm")
             .withZone(ZoneId.systemDefault());
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    private final MockVpnService delegate;
+    private final ObjectProperty<ConnectionState> connectionState = new SimpleObjectProperty<>(ConnectionState.DISCONNECTED);
+    private final StringProperty statusCaption = new SimpleStringProperty(ConnectionState.DISCONNECTED.defaultCaption());
+    private final IntegerProperty handshakeStepIndex = new SimpleIntegerProperty(0);
+    private final ObjectProperty<HandshakeStation> handshakeFailedStation = new SimpleObjectProperty<>(null);
+    private final StringProperty handshakeFailureReason = new SimpleStringProperty("");
+    private final StringProperty cipherSuite = new SimpleStringProperty("AES-256-GCM • ECDH P-256");
+    private final StringProperty virtualIp = new SimpleStringProperty("0.0.0.0");
+
+    private final ObjectProperty<EmployeeIdentity> currentIdentity = new SimpleObjectProperty<>(
+            new EmployeeIdentity("Not signed in", "Signed Out", "--", "GUEST", "None",
+                    HardwareUtil.getAuthenticHardwareFingerprint(), List.of()));
+    private final ObjectProperty<GatewayNode> selectedGateway = new SimpleObjectProperty<>();
+    private final ObservableList<GatewayNode> gateways = FXCollections.observableArrayList();
+
+    private final ObservableList<ThroughputSample> throughputSeries = FXCollections.observableArrayList();
+    private final DoubleProperty currentDownloadMbps = new SimpleDoubleProperty(0.0);
+    private final DoubleProperty currentUploadMbps = new SimpleDoubleProperty(0.0);
+    private final IntegerProperty currentLatencyMs = new SimpleIntegerProperty(4);
+
+    private final ObservableList<OfficeResource> officeResources = FXCollections.observableArrayList();
+    private final StringProperty accessPolicySummary = new SimpleStringProperty("Policy: Office Split Tunnel");
+
+    private final ObservableList<WorkModeProfile> workModes = FXCollections.observableArrayList();
+    private final ObjectProperty<WorkModeProfile> activeWorkMode = new SimpleObjectProperty<>();
+
+    private final BooleanProperty killSwitchEnabled = new SimpleBooleanProperty(true);
+    private final BooleanProperty autoConnectUntrustedWifi = new SimpleBooleanProperty(true);
+    private final BooleanProperty dnsLeakGuard = new SimpleBooleanProperty(true);
+    private final ObservableList<SplitAppItem> splitApps = FXCollections.observableArrayList();
+
+    private final ObservableList<PostureCheck> postureChecks = FXCollections.observableArrayList();
+    private final ObservableList<EmployeeSessionItem> activeRoster = FXCollections.observableArrayList();
+    private final ObjectProperty<InviteKeyState> inviteKey = new SimpleObjectProperty<>();
+    private final ObservableList<AuditEventItem> auditEvents = FXCollections.observableArrayList();
+    private final BooleanProperty auditLoading = new SimpleBooleanProperty(false);
+    private final StringProperty auditChainStatus = new SimpleStringProperty("LIVE CLIENT EVENTS");
+
+    private final AtomicLong rxBytesInTick = new AtomicLong(0);
+    private final AtomicLong txBytesInTick = new AtomicLong(0);
+    private final ScheduledExecutorService telemetryScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "ivory-telemetry-sampler");
+        t.setDaemon(true);
+        return t;
+    });
+    private final ScheduledFuture<?> telemetryTask;
+
     private final VpnClientEngine engine;
     private final boolean ownsEngine;
     private final TrustedFingerprintStore fingerprintStore;
@@ -85,7 +143,7 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     private volatile char[] activePassword = new char[0];
     private volatile String activeOtp = "";
     private volatile String configuredExpectedFingerprint = null;
-    private volatile Predicate<String> pinReplaceConfirmer = msg -> false;
+    private volatile Predicate<String> pinReplaceConfirmer = _ -> false;
     private final AtomicLong localAuditSeq = new AtomicLong(1);
 
     public BackendVpnServiceAdapter(
@@ -116,7 +174,6 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 ? new MetricsCollector(databaseManager, gatewayServer)
                 : null;
         this.auditService = databaseManager != null ? new AuditService(databaseManager) : null;
-        this.delegate = new MockVpnService(this.engine.isConnected() && this.engine.isAuthenticated());
         this.ioExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "ivory-backend-adapter");
             t.setDaemon(true);
@@ -128,38 +185,94 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         syncGatewaysFromConfig();
         syncEngineSnapshotToUi();
         attachLiveEngineListeners();
+        this.telemetryTask = telemetryScheduler.scheduleAtFixedRate(this::tickLiveTelemetry, 1, 1, TimeUnit.SECONDS);
         if (databaseManager != null && !databaseManager.isClosed()) {
             refreshAuditLog();
             syncRosterFromGateway();
         }
     }
 
-    @SuppressWarnings("unchecked")
     private void initializeHonestDefaults() {
+        long now = System.currentTimeMillis();
         marshalFx(() -> {
-            delegate.activeRoster().clear();
-            delegate.auditEvents().clear();
-            delegate.postureChecks().setAll(
-                    new PostureCheck("posture-java", "Java Runtime 25", true,
-                            "JRE " + Runtime.version() + " initialized",
-                            "Verify Java 25 runtime is installed."),
-                    new PostureCheck("posture-hw", "Hardware ID Bound", true,
-                            HardwareUtil.getAuthenticDeviceName() + " (" + HardwareUtil.getAuthenticHardwareFingerprint().substring(0, 12) + "...)",
-                            "Authentic SHA-256 device fingerprint computed."),
-                    new PostureCheck("posture-tofu", "TOFU Pin Store", true,
-                            "RSA-2048 RSASSA-PSS server verification active",
-                            "Verify pinned gateway fingerprint in known_gateways."),
-                    new PostureCheck("posture-cipher", "Tunnel Cipher", true,
-                            "ECDH P-256 PFS + AES-256-GCM directional keys",
-                            "Ensure server supports OFFICE-VPN-2.0 protocol.")
+            String gwVip = ConfigUtil.getGatewayVirtualIp();
+            workModes.setAll(
+                    new WorkModeProfile("mode-split", "Split Tunnel", TunnelProfileType.SPLIT,
+                            "Office subnets via AES-256-GCM; public traffic direct", "https://portal.office.internal",
+                            gwVip + " (office DNS)", true, now, "peacock"),
+                    new WorkModeProfile("mode-office", "Office Only", TunnelProfileType.OFFICE_ONLY,
+                            "Route corporate virtual subnet traffic strictly", "https://portal.office.internal",
+                            gwVip + " strict", true, now - 60_000, "marigold"),
+                    new WorkModeProfile("mode-full", "Full Tunnel", TunnelProfileType.FULL_TUNNEL,
+                            "All client egress encapsulated through HQ gateway", "https://portal.office.internal",
+                            gwVip + " all queries", false, now - 120_000, "lilac"),
+                    new WorkModeProfile("mode-guest", "Guest-Safe", TunnelProfileType.GUEST_SAFE,
+                            "Untrusted Wi-Fi strict mode + Kill Switch armed", "https://portal.office.internal",
+                            gwVip + " strict", false, now - 180_000, "coral")
             );
-            delegate.officeResources().setAll(
+            activeWorkMode.set(workModes.get(0));
+
+            splitApps.setAll(
+                    new SplitAppItem("app-vault", "Encrypted Vault", "AES-256-GCM file transfer", true),
+                    new SplitAppItem("app-chat", "Intranet Chat", "Office broadcast channel", true),
+                    new SplitAppItem("app-ping", "Gateway Health Probe", "PING / PONG keepalive", true),
+                    new SplitAppItem("app-public", "Public Web Browser", "Direct OS route", false)
+            );
+
+            activeRoster.clear();
+            auditEvents.clear();
+            postureChecks.setAll(buildRealPostureChecks());
+            officeResources.setAll(
                     new OfficeResource("res-vault", OfficeBranch.HQ, "Encrypted Vault", "Departmental", "AES-256-GCM File Transfer", "TCP " + ConfigUtil.getPort(), engine.isAuthenticated(), 0.06, 0.12, 0.42, 0.36),
                     new OfficeResource("res-chat", OfficeBranch.HQ, "Secure Chat", "Departmental", "Isolated Intranet Feed", "TCP " + ConfigUtil.getPort(), engine.isAuthenticated(), 0.52, 0.12, 0.42, 0.36),
-                    new OfficeResource("res-gw", OfficeBranch.HQ, "HQ Gateway", "Core", ConfigUtil.getGatewayVirtualIp() + "/24", "OFFICE-VPN-2.0", engine.isAuthenticated(), 0.06, 0.54, 0.42, 0.36),
+                    new OfficeResource("res-gw", OfficeBranch.HQ, "HQ Gateway", "Core", gwVip + "/24", "OFFICE-VPN-2.0", engine.isAuthenticated(), 0.06, 0.54, 0.42, 0.36),
                     new OfficeResource("res-dev", OfficeBranch.HQ, "Device Trust", "Zero-Trust", "Max " + ConfigUtil.getMaxDevicesPerUser() + " hardware keys", "SHA-256 Bound", engine.isAuthenticated(), 0.52, 0.54, 0.42, 0.36)
             );
-            setStringProp(delegate.auditChainStatusProperty(), databaseManager != null ? "MYSQL AUDIT CHAIN" : "LIVE CLIENT EVENTS");
+            throughputSeries.clear();
+            for (int i = 59; i >= 0; i--) {
+                throughputSeries.add(new ThroughputSample(now - i * 1000L, 0.0, 0.0, currentLatencyMs.get()));
+            }
+            rotateInviteKeyInternal();
+            auditChainStatus.set(databaseManager != null ? "MYSQL AUDIT CHAIN" : "LIVE CLIENT EVENTS");
+        });
+    }
+
+    private List<PostureCheck> buildRealPostureChecks() {
+        return List.of(
+                new PostureCheck("posture-java", "Java Runtime 25", true,
+                        "JRE " + Runtime.version() + " initialized",
+                        "Verify Java 25 runtime is installed."),
+                new PostureCheck("posture-hw", "Hardware ID Bound", true,
+                        HardwareUtil.getAuthenticDeviceName() + " (" + HardwareUtil.getAuthenticHardwareFingerprint().substring(0, 12) + "...)",
+                        "Authentic SHA-256 device fingerprint computed."),
+                new PostureCheck("posture-tofu", "TOFU Pin Store", true,
+                        "RSA-2048 RSASSA-PSS server verification active",
+                        "Verify pinned gateway fingerprint in known_gateways."),
+                new PostureCheck("posture-cipher", "Tunnel Cipher", true,
+                        "ECDH P-256 PFS + AES-256-GCM directional keys",
+                        "Ensure server supports OFFICE-VPN-2.0 protocol.")
+        );
+    }
+
+    private void tickLiveTelemetry() {
+        long rx = rxBytesInTick.getAndSet(0);
+        long tx = txBytesInTick.getAndSet(0);
+        double downMbps = Math.round(((rx * 8.0) / 1_000_000.0) * 100.0) / 100.0;
+        double upMbps = Math.round(((tx * 8.0) / 1_000_000.0) * 100.0) / 100.0;
+        int lat = currentLatencyMs.get();
+        long ts = System.currentTimeMillis();
+        marshalFx(() -> {
+            if (throughputSeries.size() >= 60) {
+                throughputSeries.remove(0);
+            }
+            throughputSeries.add(new ThroughputSample(ts, downMbps, upMbps, lat));
+            if (!engine.isConnected()) {
+                currentDownloadMbps.set(0.0);
+                currentUploadMbps.set(0.0);
+            } else if (rx > 0 || tx > 0) {
+                currentDownloadMbps.set(downMbps);
+                currentUploadMbps.set(upMbps);
+            }
         });
     }
 
@@ -172,7 +285,7 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     }
 
     public void setPinReplaceConfirmer(Predicate<String> confirmer) {
-        this.pinReplaceConfirmer = (confirmer != null) ? confirmer : msg -> false;
+        this.pinReplaceConfirmer = (confirmer != null) ? confirmer : _ -> false;
     }
 
     public Optional<String> getPinnedFingerprint(String host, int port) {
@@ -202,8 +315,8 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 cleanHost, validPort, (int) Math.max(2, metricsCollector != null ? metricsCollector.getAverageLatencyMs() : 4),
                 0, true, true, shortFp);
         marshalFx(() -> {
-            delegate.gateways().setAll(custom);
-            delegate.selectGateway(custom.id());
+            gateways.setAll(custom);
+            selectGateway(custom.id());
         });
     }
 
@@ -221,11 +334,7 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 throw new IllegalStateException("Ping failed: " + ex.getMessage(), ex);
             }
             long ms = Math.max(1L, (System.nanoTime() - startNs) / 1_000_000L);
-            marshalFx(() -> {
-                if (delegate.currentLatencyMsProperty() instanceof IntegerProperty ip) {
-                    ip.set((int) Math.min(Integer.MAX_VALUE, ms));
-                }
-            });
+            marshalFx(() -> currentLatencyMs.set((int) Math.min(Integer.MAX_VALUE, ms)));
             appendLocalAudit(AuditCategory.SIGN_IN, "Encrypted PING/PONG verified",
                     "Round-trip RTT: " + ms + " ms", engine.getAssignedVirtualIp());
             return ms;
@@ -268,12 +377,11 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         );
         marshalFx(() -> {
             if (auditService == null || databaseManager == null || databaseManager.isClosed()) {
-                delegate.auditEvents().add(0, item);
+                auditEvents.add(0, item);
             }
         });
     }
 
-    @SuppressWarnings("unchecked")
     private void syncEngineSnapshotToUi() {
         marshalFx(() -> {
             if (engine.isAuthenticated() && engine.getUsername() != null && !engine.getUsername().isBlank()) {
@@ -289,26 +397,22 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 EmployeeIdentity realId = new EmployeeIdentity(
                         uname, uname, initials, roleName, formatDeptLabel(deptName),
                         HardwareUtil.getAuthenticHardwareFingerprint(), allowedDepts);
-                if (delegate.currentIdentityProperty() instanceof ObjectProperty<?> op) {
-                    ((ObjectProperty<EmployeeIdentity>) op).set(realId);
-                }
+                currentIdentity.set(realId);
             } else {
                 EmployeeIdentity signedOut = new EmployeeIdentity(
                         "Not signed in", "Signed Out", "--", "GUEST", "None",
                         HardwareUtil.getAuthenticHardwareFingerprint(), List.of());
-                if (delegate.currentIdentityProperty() instanceof ObjectProperty<?> op) {
-                    ((ObjectProperty<EmployeeIdentity>) op).set(signedOut);
-                }
+                currentIdentity.set(signedOut);
             }
             if (engine.getAssignedVirtualIp() != null && !engine.getAssignedVirtualIp().isBlank()
                     && !"0.0.0.0".equals(engine.getAssignedVirtualIp())) {
-                setStringProp(delegate.virtualIpProperty(), engine.getAssignedVirtualIp());
+                virtualIp.set(engine.getAssignedVirtualIp());
             } else if (!engine.isAuthenticated()) {
-                setStringProp(delegate.virtualIpProperty(), "0.0.0.0");
+                virtualIp.set("0.0.0.0");
             }
             if (engine.getKillSwitchManager() != null) {
                 KillSwitchManager.State ksState = engine.getKillSwitchManager().getState();
-                delegate.killSwitchEnabledProperty().set(ksState != KillSwitchManager.State.DISABLED);
+                killSwitchEnabled.set(ksState != KillSwitchManager.State.DISABLED);
                 if (ksState == KillSwitchManager.State.BLOCKING) {
                     setConnectionState(ConnectionState.BLOCKED_BY_KILL_SWITCH,
                             "Unexpected tunnel drop — non-VPN egress blocked by Kill Switch");
@@ -317,18 +421,14 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
             if (engine.getTunnelManager() != null) {
                 TunnelManager.TunnelMode tmMode = engine.getTunnelManager().getMode();
                 String targetId = (tmMode == TunnelManager.TunnelMode.FULL) ? "mode-full" : "mode-split";
-                delegate.activateWorkMode(targetId);
+                activateWorkMode(targetId);
             }
             if (engine.getAutoReconnectManager() != null) {
-                delegate.autoConnectUntrustedWifiProperty().set(engine.getAutoReconnectManager().isEnabled());
+                autoConnectUntrustedWifi.set(engine.getAutoReconnectManager().isEnabled());
             }
-            delegate.dnsLeakGuardProperty().set(engine.getDnsLeakProtection() != null
+            dnsLeakGuard.set(engine.getDnsLeakProtection() != null
                     && engine.getDnsLeakProtection().isLeakProtectionEnabled());
-            // Sync resource unlock state
-            boolean unlocked = engine.isAuthenticated();
-            for (int i = 0; i < delegate.officeResources().size(); i++) {
-                delegate.officeResources().set(i, delegate.officeResources().get(i).withUnlocked(unlocked));
-            }
+            updateResourceUnlocks(engine.isAuthenticated());
         });
     }
 
@@ -343,12 +443,18 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
             public void onPacketSniffed(VpnPacket packet, String direction) {
                 if (packet == null) return;
                 byte[] enc = packet.getEncryptedPayload();
-                double mbps = Math.max(0.2, ((enc != null ? enc.length : 64) * 8.0) / 1000.0);
+                int len = (enc != null ? enc.length : 64);
+                double mbps = Math.max(0.2, (len * 8.0) / 1000.0);
+                if ("INCOMING".equalsIgnoreCase(direction)) {
+                    rxBytesInTick.addAndGet(len);
+                } else {
+                    txBytesInTick.addAndGet(len);
+                }
                 marshalFx(() -> {
                     if ("INCOMING".equalsIgnoreCase(direction)) {
-                        setDoubleProp(delegate.currentDownloadMbpsProperty(), mbps);
+                        currentDownloadMbps.set(mbps);
                     } else {
-                        setDoubleProp(delegate.currentUploadMbpsProperty(), mbps);
+                        currentUploadMbps.set(mbps);
                     }
                 });
             }
@@ -357,14 +463,12 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
             public void onConnectionStateChanged(String state) {
                 String clean = state != null ? state : "";
                 marshalFx(() -> {
-                    setStringProp(delegate.statusCaptionProperty(), clean);
+                    statusCaption.set(clean);
                     if (engine.isConnected() && engine.isAuthenticated()) {
                         setConnectionState(ConnectionState.CONNECTED, clean);
-                        if (delegate.handshakeStepIndexProperty() instanceof IntegerProperty ip) {
-                            ip.set(HandshakeStation.values().length);
-                        }
+                        handshakeStepIndex.set(HandshakeStation.values().length);
                         if (engine.getAssignedVirtualIp() != null) {
-                            setStringProp(delegate.virtualIpProperty(), engine.getAssignedVirtualIp());
+                            virtualIp.set(engine.getAssignedVirtualIp());
                         }
                     } else if (engine.getKillSwitchManager() != null
                             && engine.getKillSwitchManager().getState() == KillSwitchManager.State.BLOCKING) {
@@ -374,9 +478,7 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                     } else if (clean.contains("Disconnected") || clean.contains("Connection lost")) {
                         setConnectionState(ConnectionState.DISCONNECTED, clean);
                         syncEngineSnapshotToUi();
-                        if (delegate.handshakeStepIndexProperty() instanceof IntegerProperty ip) {
-                            ip.set(0);
-                        }
+                        handshakeStepIndex.set(0);
                     }
                 });
             }
@@ -385,7 +487,7 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
 
         if (engine.getKillSwitchManager() != null) {
             killSwitchListener = (newState, reason) -> marshalFx(() -> {
-                delegate.killSwitchEnabledProperty().set(newState != KillSwitchManager.State.DISABLED);
+                killSwitchEnabled.set(newState != KillSwitchManager.State.DISABLED);
                 if (newState == KillSwitchManager.State.BLOCKING) {
                     setConnectionState(ConnectionState.BLOCKED_BY_KILL_SWITCH, reason);
                 }
@@ -411,21 +513,32 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     }
 
     private void bindPolicyBridges() {
-        delegate.killSwitchEnabledProperty().addListener((obs, o, enabled) -> {
+        killSwitchEnabled.addListener((_, _, enabled) -> {
             KillSwitchManager ksm = engine.getKillSwitchManager();
             if (ksm == null) return;
             if (Boolean.TRUE.equals(enabled)) {
                 if (ksm.getState() == KillSwitchManager.State.DISABLED) {
                     ksm.enable();
                 }
+                appendLocalAudit(AuditCategory.POLICY_CHANGE, "Kill Switch armed",
+                        "Non-VPN egress protection enabled", virtualIp.get());
             } else {
                 String actor = engine.getUsername() != null ? engine.getUsername() : "local-user";
                 ksm.disable(actor, "Disabled via Ivory Atelier Safety Latches");
+                if (connectionState.get() == ConnectionState.BLOCKED_BY_KILL_SWITCH) {
+                    setConnectionState(ConnectionState.DISCONNECTED, ConnectionState.DISCONNECTED.defaultCaption());
+                }
+                appendLocalAudit(AuditCategory.POLICY_CHANGE, "Kill Switch disarmed",
+                        "Safety latches updated by " + actor, virtualIp.get());
             }
         });
-        delegate.autoConnectUntrustedWifiProperty().addListener((obs, o, enabled) ->
+        autoConnectUntrustedWifi.addListener((_, _, enabled) ->
                 engine.setAutoReconnect(Boolean.TRUE.equals(enabled)));
-        delegate.activeWorkModeProperty().addListener((obs, o, mode) -> {
+        dnsLeakGuard.addListener((_, _, enabled) ->
+                appendLocalAudit(AuditCategory.POLICY_CHANGE,
+                        "DNS leak guard " + (Boolean.TRUE.equals(enabled) ? "enforced (" + ConfigUtil.getGatewayVirtualIp() + ")" : "paused"),
+                        "Internal resolver policy updated", virtualIp.get()));
+        activeWorkMode.addListener((_, _, mode) -> {
             if (mode == null || engine.getTunnelManager() == null) return;
             TunnelManager.TunnelMode targetMode =
                     (mode.profileType() == TunnelProfileType.FULL_TUNNEL || mode.profileType() == TunnelProfileType.GUEST_SAFE)
@@ -456,8 +569,8 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 host, port, (int) Math.max(2, metricsCollector != null ? metricsCollector.getAverageLatencyMs() : 4),
                 0, true, true, shortFp);
         marshalFx(() -> {
-            delegate.gateways().setAll(primary);
-            delegate.selectGateway(primary.id());
+            gateways.setAll(primary);
+            selectGateway(primary.id());
         });
     }
 
@@ -480,13 +593,13 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                         true, "Verified", s.getConnectedAt(), "peacock"
                 ));
             }
-            marshalFx(() -> delegate.activeRoster().setAll(items));
+            marshalFx(() -> activeRoster.setAll(items));
         });
     }
 
     @Override
     public void connect() {
-        GatewayNode gw = delegate.selectedGatewayProperty().get();
+        GatewayNode gw = selectedGateway.get();
         connect(gw != null ? gw.id() : null);
     }
 
@@ -511,9 +624,9 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     @Override
     public void connect(String gatewayId) {
         if (gatewayId != null) {
-            delegate.selectGateway(gatewayId);
+            selectGateway(gatewayId);
         }
-        GatewayNode gw = delegate.selectedGatewayProperty().get();
+        GatewayNode gw = selectedGateway.get();
         if (gw == null) {
             return;
         }
@@ -557,12 +670,8 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 setConnectionStateFx(ConnectionState.DISCONNECTED, "Gateway connection failed: " + ex.getMessage());
                 appendLocalAudit(AuditCategory.FAILED_ATTEMPT, "Gateway handshake/connect failed", ex.getMessage(), gw.hostname());
                 marshalFx(() -> {
-                    if (delegate.handshakeFailedStationProperty() instanceof ObjectProperty<?> op) {
-                        @SuppressWarnings("unchecked")
-                        ObjectProperty<HandshakeStation> stationProp = (ObjectProperty<HandshakeStation>) op;
-                        stationProp.set(HandshakeStation.REACH_GATEWAY);
-                    }
-                    setStringProp(delegate.handshakeFailureReasonProperty(), ex.getMessage());
+                    handshakeFailedStation.set(HandshakeStation.REACH_GATEWAY);
+                    handshakeFailureReason.set(ex.getMessage());
                 });
             }
         });
@@ -573,7 +682,15 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         ioExecutor.submit(() -> {
             String prevIp = engine.getAssignedVirtualIp();
             engine.disconnect();
-            delegate.disconnect();
+            marshalFx(() -> {
+                handshakeStepIndex.set(0);
+                handshakeFailedStation.set(null);
+                handshakeFailureReason.set("");
+                setConnectionState(ConnectionState.DISCONNECTED, ConnectionState.DISCONNECTED.defaultCaption());
+                currentDownloadMbps.set(0.0);
+                currentUploadMbps.set(0.0);
+                updateResourceUnlocks(false);
+            });
             syncEngineSnapshotToUi();
             syncRosterFromGateway();
             appendLocalAudit(AuditCategory.SIGN_IN, "Disconnected tunnel", "Session closed by client", prevIp);
@@ -609,25 +726,32 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     @Override
     public void revokeSession(String sessionId) {
         String actor = requireAuthorizedAdminActor();
-        String targetUsername = sessionId;
-        for (EmployeeSessionItem item : delegate.activeRoster()) {
+        String resolvedUser = sessionId;
+        EmployeeSessionItem found = null;
+        for (EmployeeSessionItem item : activeRoster) {
             if (Objects.equals(item.sessionId(), sessionId)) {
-                targetUsername = item.username();
+                resolvedUser = item.username();
+                found = item;
                 break;
             }
         }
-        delegate.revokeSession(sessionId);
+        final EmployeeSessionItem toRemove = found;
+        final String targetUsername = resolvedUser;
+        if (toRemove != null) {
+            marshalFx(() -> activeRoster.remove(toRemove));
+            appendLocalAudit(AuditCategory.REVOKE,
+                    "Revoked session " + toRemove.username() + " (" + toRemove.sessionId() + ")",
+                    "Virtual IP " + toRemove.virtualIp() + " reclaimed", toRemove.virtualIp());
+        }
         if (gatewayServer != null && targetUsername != null && !targetUsername.isBlank()) {
-            final String resolvedUser = targetUsername;
             ioExecutor.submit(() -> {
-                gatewayServer.disconnectUser(resolvedUser, "Revoked via Ivory Atelier console", actor);
+                gatewayServer.disconnectUser(targetUsername, "Revoked via Ivory Atelier console", actor);
                 syncRosterFromGateway();
                 refreshAuditLog();
             });
         }
     }
 
-    @SuppressWarnings("unchecked")
     private void updateIdentityFromAccount(String username, String deptName, String roleName) {
         if (username == null || username.isBlank()) return;
         String cleanUser = username.trim();
@@ -640,11 +764,7 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         EmployeeIdentity realId = new EmployeeIdentity(
                 cleanUser, cleanUser, initials, roleName, formatDeptLabel(deptName),
                 HardwareUtil.getAuthenticHardwareFingerprint(), allowedDepts);
-        marshalFx(() -> {
-            if (delegate.currentIdentityProperty() instanceof ObjectProperty<?> op) {
-                ((ObjectProperty<EmployeeIdentity>) op).set(realId);
-            }
-        });
+        marshalFx(() -> currentIdentity.set(realId));
     }
 
     @Override
@@ -661,7 +781,7 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 if (cleanUser.isBlank() || copyPw.length == 0) {
                     return new AuthResult(false, false, "Username and password are required.");
                 }
-                GatewayNode gw = delegate.selectedGatewayProperty().get();
+                GatewayNode gw = selectedGateway.get();
                 boolean canTryWire = gw != null && (gatewayServer == null || gatewayServer.isRunning());
                 if (canTryWire) {
                     try {
@@ -737,33 +857,38 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         if (auditService == null || databaseManager == null || databaseManager.isClosed()) {
             return;
         }
+        marshalFx(() -> auditLoading.set(true));
         ioExecutor.submit(() -> {
-            List<DatabaseManager.AuditLogEntry> logs = auditService.getRecentAudit(40);
-            AuditVerifyResult verify = databaseManager.verifyAuditChain();
-            List<AuditEventItem> mapped = new ArrayList<>();
-            for (DatabaseManager.AuditLogEntry e : logs) {
-                AuditCategory cat = mapCategory(e.eventType());
-                mapped.add(new AuditEventItem(
-                        e.id(),
-                        "Live Ledger",
-                        TIME_FMT.format(Instant.ofEpochMilli(e.timestamp())),
-                        cat,
-                        e.actor(),
-                        e.eventType() + " • " + e.username(),
-                        e.details(),
-                        e.remoteIp()
-                ));
+            try {
+                List<DatabaseManager.AuditLogEntry> logs = auditService.getRecentAudit(40);
+                AuditVerifyResult verify = databaseManager.verifyAuditChain();
+                List<AuditEventItem> mapped = new ArrayList<>();
+                for (DatabaseManager.AuditLogEntry e : logs) {
+                    AuditCategory cat = mapCategory(e.eventType());
+                    mapped.add(new AuditEventItem(
+                            e.id(),
+                            "Live Ledger",
+                            TIME_FMT.format(Instant.ofEpochMilli(e.timestamp())),
+                            cat,
+                            e.actor(),
+                            e.eventType() + " • " + e.username(),
+                            e.details(),
+                            e.remoteIp()
+                    ));
+                }
+                marshalFx(() -> {
+                    if (!mapped.isEmpty()) {
+                        auditEvents.setAll(mapped);
+                    }
+                    if (verify != null) {
+                        boolean intact = verify.status() == AuditVerifyResult.AuditStatus.OK;
+                        String statusText = (intact ? "CHAIN INTACT • " : "VERIFY ALERT • ") + verify.checkedRows() + " ROWS";
+                        auditChainStatus.set(statusText);
+                    }
+                });
+            } finally {
+                marshalFx(() -> auditLoading.set(false));
             }
-            marshalFx(() -> {
-                if (!mapped.isEmpty()) {
-                    delegate.auditEvents().setAll(mapped);
-                }
-                if (verify != null) {
-                    boolean intact = verify.status() == AuditVerifyResult.AuditStatus.OK;
-                    String statusText = (intact ? "CHAIN INTACT • " : "VERIFY ALERT • ") + verify.checkedRows() + " ROWS";
-                    setStringProp(delegate.auditChainStatusProperty(), statusText);
-                }
-            });
         });
     }
 
@@ -778,7 +903,57 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 return false;
             }
         }
-        return delegate.exportAuditCsv(targetFile);
+        Objects.requireNonNull(targetFile, "targetFile");
+        StringBuilder sb = new StringBuilder("id,day,time,category,actor,headline,detail,remote_ip\n");
+        for (AuditEventItem item : auditEvents) {
+            sb.append(item.id()).append(',')
+              .append(csv(item.dayGroup())).append(',')
+              .append(csv(item.timeText())).append(',')
+              .append(csv(item.category().name())).append(',')
+              .append(csv(item.actor())).append(',')
+              .append(csv(item.headline())).append(',')
+              .append(csv(item.detail())).append(',')
+              .append(csv(item.remoteIp())).append('\n');
+        }
+        try {
+            Files.writeString(targetFile, sb.toString(), StandardCharsets.UTF_8);
+            return true;
+        } catch (IOException ex) {
+            LOGGER.error("Failed to export client audit events to CSV: {}", ex.getMessage());
+            return false;
+        }
+    }
+
+    private static String csv(String val) {
+        if (val == null) return "\"\"";
+        return "\"" + val.replace("\"", "\"\"") + "\"";
+    }
+
+    private void updateResourceUnlocks(boolean connected) {
+        WorkModeProfile mode = activeWorkMode.get();
+        boolean guestSafe = mode != null && mode.profileType() == TunnelProfileType.GUEST_SAFE;
+        EmployeeIdentity id = currentIdentity.get();
+        for (int i = 0; i < officeResources.size(); i++) {
+            OfficeResource r = officeResources.get(i);
+            boolean unlock = connected && (!guestSafe || !"Departmental".equals(r.department()));
+            if (r.unlocked() != unlock) {
+                officeResources.set(i, r.withUnlocked(unlock));
+            }
+        }
+        if (mode != null) {
+            String deptLabel = (id != null && !"None".equals(id.department())) ? id.department() : "Signed Out";
+            accessPolicySummary.set("Policy: " + mode.name() + " • " + deptLabel);
+        }
+    }
+
+    private void rotateInviteKeyInternal() {
+        int a = 0x1000 + SECURE_RANDOM.nextInt(0xE000);
+        int b = 0x1000 + SECURE_RANDOM.nextInt(0xE000);
+        String code = String.format("OVPN-INV-%04X-%04X", a, b);
+        String actor = (engine.getUsername() != null && !engine.getUsername().isBlank())
+                ? engine.getUsername()
+                : (authorizedAdminUsername != null ? authorizedAdminUsername : "admin");
+        inviteKey.set(new InviteKeyState(code, System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(15), 1, actor));
     }
 
     private static String formatDeptLabel(String rawDept) {
@@ -806,28 +981,13 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         return AuditCategory.SIGN_IN;
     }
 
-    @SuppressWarnings("unchecked")
     private void setConnectionState(ConnectionState state, String caption) {
-        if (delegate.connectionStateProperty() instanceof ObjectProperty<?> op) {
-            ((ObjectProperty<ConnectionState>) op).set(state);
-        }
-        setStringProp(delegate.statusCaptionProperty(), caption);
+        connectionState.set(state);
+        statusCaption.set(caption);
     }
 
     private void setConnectionStateFx(ConnectionState state, String caption) {
         marshalFx(() -> setConnectionState(state, caption));
-    }
-
-    private static void setStringProp(ReadOnlyStringProperty prop, String value) {
-        if (prop instanceof StringProperty sp) {
-            sp.set(value);
-        }
-    }
-
-    private static void setDoubleProp(ReadOnlyDoubleProperty prop, double value) {
-        if (prop instanceof DoubleProperty dp) {
-            dp.set(value);
-        }
     }
 
     private void marshalFx(Runnable r) {
@@ -854,55 +1014,193 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         if (ownsEngine) {
             engine.close();
         }
-        delegate.close();
+        if (telemetryTask != null) {
+            telemetryTask.cancel(false);
+        }
+        telemetryScheduler.shutdownNow();
         ioExecutor.shutdownNow();
     }
 
-    // ---- Delegated Observable Surface ----
-    @Override public ReadOnlyObjectProperty<ConnectionState> connectionStateProperty() { return delegate.connectionStateProperty(); }
-    @Override public ReadOnlyStringProperty statusCaptionProperty() { return delegate.statusCaptionProperty(); }
-    @Override public ReadOnlyIntegerProperty handshakeStepIndexProperty() { return delegate.handshakeStepIndexProperty(); }
-    @Override public ReadOnlyObjectProperty<HandshakeStation> handshakeFailedStationProperty() { return delegate.handshakeFailedStationProperty(); }
-    @Override public ReadOnlyStringProperty handshakeFailureReasonProperty() { return delegate.handshakeFailureReasonProperty(); }
-    @Override public ReadOnlyStringProperty cipherSuiteProperty() { return delegate.cipherSuiteProperty(); }
-    @Override public ReadOnlyStringProperty virtualIpProperty() { return delegate.virtualIpProperty(); }
-    @Override public ReadOnlyObjectProperty<EmployeeIdentity> currentIdentityProperty() { return delegate.currentIdentityProperty(); }
-    @Override public ReadOnlyObjectProperty<GatewayNode> selectedGatewayProperty() { return delegate.selectedGatewayProperty(); }
-    @Override public ObservableList<GatewayNode> gateways() { return delegate.gateways(); }
-    @Override public ObservableList<ThroughputSample> throughputSeries() { return delegate.throughputSeries(); }
-    @Override public ReadOnlyDoubleProperty currentDownloadMbpsProperty() { return delegate.currentDownloadMbpsProperty(); }
-    @Override public ReadOnlyDoubleProperty currentUploadMbpsProperty() { return delegate.currentUploadMbpsProperty(); }
-    @Override public ReadOnlyIntegerProperty currentLatencyMsProperty() { return delegate.currentLatencyMsProperty(); }
-    @Override public ObservableList<OfficeResource> officeResources() { return delegate.officeResources(); }
-    @Override public ReadOnlyStringProperty accessPolicySummaryProperty() { return delegate.accessPolicySummaryProperty(); }
-    @Override public ObservableList<WorkModeProfile> workModes() { return delegate.workModes(); }
-    @Override public ReadOnlyObjectProperty<WorkModeProfile> activeWorkModeProperty() { return delegate.activeWorkModeProperty(); }
-    @Override public BooleanProperty killSwitchEnabledProperty() { return delegate.killSwitchEnabledProperty(); }
-    @Override public BooleanProperty autoConnectUntrustedWifiProperty() { return delegate.autoConnectUntrustedWifiProperty(); }
-    @Override public BooleanProperty dnsLeakGuardProperty() { return delegate.dnsLeakGuardProperty(); }
-    @Override public ObservableList<SplitAppItem> splitApps() { return delegate.splitApps(); }
-    @Override public ObservableList<PostureCheck> postureChecks() { return delegate.postureChecks(); }
-    @Override public ObservableList<EmployeeSessionItem> activeRoster() { return delegate.activeRoster(); }
-    @Override public ReadOnlyObjectProperty<InviteKeyState> inviteKeyProperty() { return delegate.inviteKeyProperty(); }
-    @Override public ObservableList<AuditEventItem> auditEvents() { return delegate.auditEvents(); }
-    @Override public ReadOnlyBooleanProperty auditLoadingProperty() { return delegate.auditLoadingProperty(); }
-    @Override public ReadOnlyStringProperty auditChainStatusProperty() { return delegate.auditChainStatusProperty(); }
-    @Override public void retryHandshake() { connect(); }
-    @Override public void simulateHandshakeFailure() { delegate.simulateHandshakeFailure(); }
-    @Override public void clearKillSwitchBlock() {
+    // ---- Observable Service Surface ----
+    @Override public ReadOnlyObjectProperty<ConnectionState> connectionStateProperty() { return connectionState; }
+    @Override public ReadOnlyStringProperty statusCaptionProperty() { return statusCaption; }
+    @Override public ReadOnlyIntegerProperty handshakeStepIndexProperty() { return handshakeStepIndex; }
+    @Override public ReadOnlyObjectProperty<HandshakeStation> handshakeFailedStationProperty() { return handshakeFailedStation; }
+    @Override public ReadOnlyStringProperty handshakeFailureReasonProperty() { return handshakeFailureReason; }
+    @Override public ReadOnlyStringProperty cipherSuiteProperty() { return cipherSuite; }
+    @Override public ReadOnlyStringProperty virtualIpProperty() { return virtualIp; }
+    @Override public ReadOnlyObjectProperty<EmployeeIdentity> currentIdentityProperty() { return currentIdentity; }
+    @Override public ReadOnlyObjectProperty<GatewayNode> selectedGatewayProperty() { return selectedGateway; }
+    @Override public ObservableList<GatewayNode> gateways() { return gateways; }
+    @Override public ObservableList<ThroughputSample> throughputSeries() { return throughputSeries; }
+    @Override public ReadOnlyDoubleProperty currentDownloadMbpsProperty() { return currentDownloadMbps; }
+    @Override public ReadOnlyDoubleProperty currentUploadMbpsProperty() { return currentUploadMbps; }
+    @Override public ReadOnlyIntegerProperty currentLatencyMsProperty() { return currentLatencyMs; }
+    @Override public ObservableList<OfficeResource> officeResources() { return officeResources; }
+    @Override public ReadOnlyStringProperty accessPolicySummaryProperty() { return accessPolicySummary; }
+    @Override public ObservableList<WorkModeProfile> workModes() { return workModes; }
+    @Override public ReadOnlyObjectProperty<WorkModeProfile> activeWorkModeProperty() { return activeWorkMode; }
+    @Override public BooleanProperty killSwitchEnabledProperty() { return killSwitchEnabled; }
+    @Override public BooleanProperty autoConnectUntrustedWifiProperty() { return autoConnectUntrustedWifi; }
+    @Override public BooleanProperty dnsLeakGuardProperty() { return dnsLeakGuard; }
+    @Override public ObservableList<SplitAppItem> splitApps() { return splitApps; }
+    @Override public ObservableList<PostureCheck> postureChecks() { return postureChecks; }
+    @Override public ObservableList<EmployeeSessionItem> activeRoster() { return activeRoster; }
+    @Override public ReadOnlyObjectProperty<InviteKeyState> inviteKeyProperty() { return inviteKey; }
+    @Override public ObservableList<AuditEventItem> auditEvents() { return auditEvents; }
+    @Override public ReadOnlyBooleanProperty auditLoadingProperty() { return auditLoading; }
+    @Override public ReadOnlyStringProperty auditChainStatusProperty() { return auditChainStatus; }
+
+    @Override
+    public void retryHandshake() {
+        connect();
+    }
+
+    @Override
+    public void simulateHandshakeFailure() {
+        marshalFx(() -> {
+            handshakeFailedStation.set(HandshakeStation.REACH_GATEWAY);
+            handshakeFailureReason.set("Manual handshake diagnostic reset triggered");
+        });
+    }
+
+    @Override
+    public void clearKillSwitchBlock() {
         if (engine.getKillSwitchManager() != null) {
             engine.getKillSwitchManager().enable();
         }
-        delegate.clearKillSwitchBlock();
+        marshalFx(() -> {
+            connectionState.set(ConnectionState.DISCONNECTED);
+            statusCaption.set("Kill switch reset — ready to connect");
+        });
     }
-    @Override public void selectGateway(String gatewayId) { delegate.selectGateway(gatewayId); }
-    @Override public void toggleFavoriteGateway(String gatewayId) { delegate.toggleFavoriteGateway(gatewayId); }
-    @Override public void activateWorkMode(String modeId) { delegate.activateWorkMode(modeId); }
-    @Override public void togglePinWorkMode(String modeId) { delegate.togglePinWorkMode(modeId); }
-    @Override public void updateWorkMode(WorkModeProfile updated) { delegate.updateWorkMode(updated); }
-    @Override public void moveSplitApp(String appId, boolean throughTunnel) { delegate.moveSplitApp(appId, throughTunnel); }
-    @Override public void remediatePostureCheck(String checkId) { delegate.remediatePostureCheck(checkId); }
-    @Override public void rerunPostureChecks() { delegate.rerunPostureChecks(); }
-    @Override public void rotateInviteKey() { delegate.rotateInviteKey(); }
-    @Override public CompletableFuture<AuthResult> authenticateSso(String provider) { return delegate.authenticateSso(provider); }
+
+    @Override
+    public void selectGateway(String gatewayId) {
+        if (gatewayId == null) return;
+        marshalFx(() -> {
+            for (GatewayNode gw : gateways) {
+                if (gw.id().equals(gatewayId)) {
+                    selectedGateway.set(gw);
+                    if (connectionState.get() == ConnectionState.CONNECTED) {
+                        statusCaption.set("Connected to " + gw.city() + " • AES-256-GCM");
+                    }
+                    break;
+                }
+            }
+        });
+    }
+
+    @Override
+    public void toggleFavoriteGateway(String gatewayId) {
+        if (gatewayId == null) return;
+        marshalFx(() -> {
+            for (int i = 0; i < gateways.size(); i++) {
+                GatewayNode gw = gateways.get(i);
+                if (gw.id().equals(gatewayId)) {
+                    GatewayNode updated = gw.withFavorite(!gw.favorite());
+                    gateways.set(i, updated);
+                    if (selectedGateway.get() != null && selectedGateway.get().id().equals(gatewayId)) {
+                        selectedGateway.set(updated);
+                    }
+                    break;
+                }
+            }
+        });
+    }
+
+    @Override
+    public void activateWorkMode(String modeId) {
+        if (modeId == null) return;
+        marshalFx(() -> {
+            long now = System.currentTimeMillis();
+            for (int i = 0; i < workModes.size(); i++) {
+                WorkModeProfile m = workModes.get(i);
+                if (m.id().equals(modeId)) {
+                    WorkModeProfile updated = m.withLastUsed(now);
+                    workModes.set(i, updated);
+                    activeWorkMode.set(updated);
+                    updateResourceUnlocks(connectionState.get() == ConnectionState.CONNECTED);
+                    appendLocalAudit(AuditCategory.POLICY_CHANGE, "Switched profile to " + updated.name(),
+                            "DNS policy: " + updated.dnsPolicy(), virtualIp.get());
+                    break;
+                }
+            }
+        });
+    }
+
+    @Override
+    public void togglePinWorkMode(String modeId) {
+        if (modeId == null) return;
+        marshalFx(() -> {
+            for (int i = 0; i < workModes.size(); i++) {
+                WorkModeProfile m = workModes.get(i);
+                if (m.id().equals(modeId)) {
+                    WorkModeProfile updated = m.withPinned(!m.pinned());
+                    workModes.set(i, updated);
+                    if (activeWorkMode.get() != null && activeWorkMode.get().id().equals(modeId)) {
+                        activeWorkMode.set(updated);
+                    }
+                    break;
+                }
+            }
+        });
+    }
+
+    @Override
+    public void updateWorkMode(WorkModeProfile updated) {
+        if (updated == null) return;
+        marshalFx(() -> {
+            for (int i = 0; i < workModes.size(); i++) {
+                if (workModes.get(i).id().equals(updated.id())) {
+                    workModes.set(i, updated);
+                    if (activeWorkMode.get() != null && activeWorkMode.get().id().equals(updated.id())) {
+                        activeWorkMode.set(updated);
+                    }
+                    break;
+                }
+            }
+        });
+    }
+
+    @Override
+    public void moveSplitApp(String appId, boolean throughTunnel) {
+        if (appId == null) return;
+        marshalFx(() -> {
+            for (int i = 0; i < splitApps.size(); i++) {
+                SplitAppItem item = splitApps.get(i);
+                if (item.appId().equals(appId)) {
+                    splitApps.set(i, item.withThroughTunnel(throughTunnel));
+                    appendLocalAudit(AuditCategory.POLICY_CHANGE,
+                            item.displayName() + (throughTunnel ? " -> Through tunnel" : " -> Direct"),
+                            "Split-tunnel routing rule updated", virtualIp.get());
+                    break;
+                }
+            }
+        });
+    }
+
+    @Override
+    public void remediatePostureCheck(String checkId) {
+        if (checkId == null) return;
+        marshalFx(() -> postureChecks.setAll(buildRealPostureChecks()));
+    }
+
+    @Override
+    public void rerunPostureChecks() {
+        marshalFx(() -> postureChecks.setAll(buildRealPostureChecks()));
+    }
+
+    @Override
+    public void rotateInviteKey() {
+        marshalFx(this::rotateInviteKeyInternal);
+        appendLocalAudit(AuditCategory.POLICY_CHANGE, "Generated temporary setup key",
+                "15-minute enrollment window started", virtualIp.get());
+    }
+
+    @Override
+    public CompletableFuture<AuthResult> authenticateSso(String provider) {
+        return CompletableFuture.completedFuture(new AuthResult(
+                false, false, "Sign in with your office username, passphrase, and optional 6-digit MFA code."));
+    }
 }

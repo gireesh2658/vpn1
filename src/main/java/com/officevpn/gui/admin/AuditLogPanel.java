@@ -88,11 +88,11 @@ public final class AuditLogPanel extends VBox {
 
         Button searchLogButton = new Button(Messages.get("admin.audit.button.search"));
         searchLogButton.getStyleClass().add("btn-primary");
-        searchLogButton.setOnAction(e -> refresh());
+        searchLogButton.setOnAction(_ -> refresh());
 
         Button resetFiltersButton = new Button(Messages.get("admin.audit.button.reset"));
         resetFiltersButton.getStyleClass().add("btn-secondary");
-        resetFiltersButton.setOnAction(e -> {
+        resetFiltersButton.setOnAction(_ -> {
             usernameFilter.clear();
             eventFilter.getSelectionModel().selectFirst();
             refresh();
@@ -100,11 +100,11 @@ public final class AuditLogPanel extends VBox {
 
         Button verifyChainButton = new Button(Messages.get("admin.audit.button.verify"));
         verifyChainButton.getStyleClass().add("btn-success");
-        verifyChainButton.setOnAction(e -> runChainVerify());
+        verifyChainButton.setOnAction(_ -> runChainVerify());
 
         Button exportLogButton = new Button(Messages.get("admin.audit.button.export"));
         exportLogButton.getStyleClass().add("btn-secondary");
-        exportLogButton.setOnAction(e -> handleExportCsv());
+        exportLogButton.setOnAction(_ -> handleExportCsv());
 
         Region tbSpacer = new Region();
         HBox.setHgrow(tbSpacer, Priority.ALWAYS);
@@ -122,7 +122,7 @@ public final class AuditLogPanel extends VBox {
         table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("Details", DatabaseManager.AuditLogEntry::details, 280), 220, 0));
         VBox.setVgrow(table, Priority.ALWAYS);
 
-        table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> {
+        table.getSelectionModel().selectedItemProperty().addListener((_, _, sel) -> {
             if (sel == null) {
                 detailPreview.setText("Select an audit record to inspect full details.");
             } else {

@@ -106,21 +106,21 @@ public final class FileVaultPanel extends VBox {
             vaultSelector.getItems().addAll(Department.values());
         }
         vaultSelector.setValue(engine.getDepartment() != null ? engine.getDepartment() : Department.IT);
-        vaultSelector.setOnAction(e -> refreshFiles());
+        vaultSelector.setOnAction(_ -> refreshFiles());
 
         refreshButton = new Button(Messages.get("vault.button.refresh"));
         refreshButton.getStyleClass().add("btn-secondary");
         Messages.configureAccessibleControl(refreshButton,
                 Messages.get("vault.button.refresh"),
                 Messages.get("vault.tooltip.refresh"));
-        refreshButton.setOnAction(e -> refreshFiles());
+        refreshButton.setOnAction(_ -> refreshFiles());
 
         uploadButton = new Button(Messages.get("vault.button.upload"));
         uploadButton.getStyleClass().add("btn-primary");
         Messages.configureAccessibleControl(uploadButton,
                 Messages.get("vault.button.upload"),
                 Messages.get("vault.tooltip.upload"));
-        uploadButton.setOnAction(e -> handleUpload());
+        uploadButton.setOnAction(_ -> handleUpload());
 
         downloadButton = new Button(Messages.get("vault.button.download"));
         downloadButton.getStyleClass().add("btn-success");
@@ -128,7 +128,7 @@ public final class FileVaultPanel extends VBox {
         Messages.configureAccessibleControl(downloadButton,
                 Messages.get("vault.button.download"),
                 Messages.get("vault.tooltip.download"));
-        downloadButton.setOnAction(e -> handleDownload());
+        downloadButton.setOnAction(_ -> handleDownload());
 
         Button copyFilenameButton = new Button(Messages.get("vault.button.copyName"));
         copyFilenameButton.getStyleClass().add("btn-secondary");
@@ -136,12 +136,12 @@ public final class FileVaultPanel extends VBox {
         Messages.configureAccessibleControl(copyFilenameButton,
                 Messages.get("vault.button.copyName"),
                 Messages.get("vault.tooltip.copyName"));
-        copyFilenameButton.setOnAction(e -> {
+        copyFilenameButton.setOnAction(_ -> {
             VaultFileRow sel = table.getSelectionModel().getSelectedItem();
             if (sel != null) UiSafe.copyToClipboard(sel.fileName());
         });
 
-        table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> {
+        table.getSelectionModel().selectedItemProperty().addListener((_, _, sel) -> {
             boolean has = sel != null;
             downloadButton.setDisable(!has);
             copyFilenameButton.setDisable(!has);
@@ -156,7 +156,7 @@ public final class FileVaultPanel extends VBox {
         table.getColumns().add(UiSafe.safeColumn("File Name", VaultFileRow::fileName, 360));
         table.getColumns().add(UiSafe.safeColumn("Department Vault", VaultFileRow::department, 160));
         table.getColumns().add(UiSafe.badgeColumn("Wire Integrity", VaultFileRow::encryptionBadge,
-                r -> "pill-success", 180));
+                _ -> "pill-success", 180));
         VBox.setVgrow(table, Priority.ALWAYS);
 
         statusLabel.getStyleClass().add("muted-label");

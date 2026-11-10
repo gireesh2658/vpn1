@@ -144,7 +144,7 @@ public final class BandwidthManager {
                 databaseManager.logBandwidthConsumption(username, 0, bytes);
             }
         } else if (databaseManager != null && !databaseManager.isClosed() && bytes > 0) {
-            AtomicLong acc = pendingAllowedBytes.computeIfAbsent(username, k -> new AtomicLong(0L));
+            AtomicLong acc = pendingAllowedBytes.computeIfAbsent(username, _ -> new AtomicLong(0L));
             long current = acc.addAndGet(bytes);
             if (current >= 1024L) {
                 long toFlush = acc.getAndSet(0L);

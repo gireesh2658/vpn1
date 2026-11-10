@@ -47,10 +47,10 @@ public final class SignInCard extends Control {
     private static final PseudoClass PC_OTP_ERROR = PseudoClass.getPseudoClass("otp-error");
 
     private final ObjectProperty<CredentialVerifier> verifier = new SimpleObjectProperty<>(
-            (u, p, otp) -> CompletableFuture.completedFuture(new AuthResult(false, false,
+            (_, _, _) -> CompletableFuture.completedFuture(new AuthResult(false, false,
                     "Bind SignInCard to a live VpnClientService before authenticating")));
-    private final ObjectProperty<Consumer<String>> onSsoRequested = new SimpleObjectProperty<>(provider -> {});
-    private final ObjectProperty<Consumer<AuthResult>> onAuthenticated = new SimpleObjectProperty<>(res -> {});
+    private final ObjectProperty<Consumer<String>> onSsoRequested = new SimpleObjectProperty<>(_ -> {});
+    private final ObjectProperty<Consumer<AuthResult>> onAuthenticated = new SimpleObjectProperty<>(_ -> {});
 
     public SignInCard() {
         getStyleClass().setAll("signin-card");
@@ -132,8 +132,8 @@ public final class SignInCard extends Control {
             signInBtn.getStyleClass().add("ia-btn-marigold");
             signInBtn.setGraphic(Icons.ink(Feather.SHIELD, 14));
             signInBtn.setMaxWidth(Double.MAX_VALUE);
-            signInBtn.setOnAction(e -> submitCredentials());
-            passField.setOnAction(e -> submitCredentials());
+            signInBtn.setOnAction(_ -> submitCredentials());
+            passField.setOnAction(_ -> submitCredentials());
 
             root.getChildren().addAll(
                     badge, title, sub,
@@ -156,7 +156,7 @@ public final class SignInCard extends Control {
                 cell.setMinSize(36, 44);
                 cell.setAccessibleText("OTP digit " + (i + 1) + " of 6");
 
-                cell.textProperty().addListener((obs, oldVal, newVal) -> {
+                cell.textProperty().addListener((_, _, newVal) -> {
                     clearOtpError();
                     if (newVal == null) return;
                     String digitsOnly = newVal.replaceAll("\\D+", "");

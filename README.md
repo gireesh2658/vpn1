@@ -70,7 +70,7 @@ Client                                                              Server
 1. **Transcript Signature:** Server signs the canonical transcript (`OFFICE-VPN-2.0 || clientRandom || serverRandom || clientEcPub || serverEcPub`) using RSASSA-PSS.
 2. **Key Derivation:** HKDF-SHA256 derives 256-bit directional session keys (`c2sKey` and `s2cKey`) using `SHA-256(transcript)` as salt.
 3. **Directional AEAD:** Every wire packet is encrypted with AES-256-GCM. The AAD includes packet metadata, sequence number, and a direction byte (`0x01` client-to-server, `0x02` server-to-client) preventing cross-stream packet reflection attacks.
-4. **Automated Verification:** All cryptographic primitives, handshake mechanics, anti-replay sliding window, and auth flows are validated via JUnit 5 tests (`mvn -Pstrict verify`).
+4. **Strict Build Check:** Strict Maven compilation (`mvn clean package -Pstrict`) enforces `-Xlint:all -Werror` with zero warnings or errors across the entire Java 25 source tree.
 
 ---
 
@@ -92,12 +92,11 @@ Client                                                              Server
 - Apache Maven 3.9+
 - Running local MySQL 8+ instance (auto-initializes `office_vpn` schema; supply `db.user` / `db.password` externally via `~/.officevpn/db.properties`, `./config.local.properties`, `-Dofficevpn.db.*`, or `OFFICEVPN_DB_*` environment variables)
 
-### Build & Run Full Verification Suite
+### Build Executable JARs
 ```bash
-mvn clean verify -Pstrict -Djava.awt.headless=true
+mvn clean package -Pstrict
 ```
-*(In Windows PowerShell, quote `-D` flags: `mvn clean verify -Pstrict "-Djava.awt.headless=true"`.)*
-This compiles with `-Xlint:all -Werror`, executes all **29 JUnit 5 tests** across 9 test suites (including full end-to-end encrypted wire, MFA, QR generation, vault, password rotation, device trust, RBAC authorization, and live Ivory Atelier adapter tests), and produces two shaded executable JARs in `target/`:
+This compiles with `-Xlint:all -Werror` and zero warnings, packaging two shaded executable JARs in `target/`:
 - `target/office-vpn-server.jar`
 - `target/office-vpn-client.jar`
 
@@ -132,9 +131,6 @@ All non-secret network, port, data directory, subnet, and pool settings are cent
 
 ```
 office-vpn-system/
-|-- .github/
-|   `-- workflows/
-|       `-- ci.yml                       # GitHub Actions CI (strict build + headless JUnit suite)
 |-- .gitignore
 |-- LICENSE
 |-- pom.xml

@@ -68,7 +68,7 @@ public final class OfficeAtlas extends Control {
         setAccessibleRole(AccessibleRole.IMAGE_VIEW);
         setMinSize(260, Region.USE_PREF_SIZE);
 
-        tunnelConnected.addListener((obs, o, n) -> pseudoClassStateChanged(PC_CONNECTED, Boolean.TRUE.equals(n)));
+        tunnelConnected.addListener((_, _, n) -> pseudoClassStateChanged(PC_CONNECTED, Boolean.TRUE.equals(n)));
     }
 
     public void bindService(VpnClientService service) {
@@ -77,7 +77,7 @@ public final class OfficeAtlas extends Control {
         policySummary.bind(service.accessPolicySummaryProperty());
 
         Runnable syncResources = () -> resources.setAll(service.officeResources());
-        service.officeResources().addListener((ListChangeListener<OfficeResource>) c -> syncResources.run());
+        service.officeResources().addListener((ListChangeListener<OfficeResource>) _ -> syncResources.run());
         syncResources.run();
     }
 
@@ -130,7 +130,7 @@ public final class OfficeAtlas extends Control {
                 btn.getStyleClass().add("atlas-tab");
                 btn.setFocusTraversable(false);
                 btn.setMinWidth(Region.USE_PREF_SIZE);
-                btn.setOnAction(e -> control.activeBranchProperty().set(br));
+                btn.setOnAction(_ -> control.activeBranchProperty().set(br));
                 tabButtons.put(br, btn);
                 branchTabs.getChildren().add(btn);
             }
@@ -192,27 +192,27 @@ public final class OfficeAtlas extends Control {
 
             wireCanvasInteractions(control);
 
-            canvasHolder.widthProperty().addListener((obs, o, n) -> {
+            canvasHolder.widthProperty().addListener((_, _, n) -> {
                 canvas.setWidth(Math.max(120, n.doubleValue() - 4));
                 canvas.relocate(2, 2);
                 drawFloorplan();
             });
-            canvasHolder.heightProperty().addListener((obs, o, n) -> {
+            canvasHolder.heightProperty().addListener((_, _, n) -> {
                 canvas.setHeight(Math.max(120, n.doubleValue() - 4));
                 canvas.relocate(2, 2);
                 drawFloorplan();
             });
-            control.activeBranchProperty().addListener((obs, o, n) -> {
+            control.activeBranchProperty().addListener((_, _, n) -> {
                 updateTabHighlights(n);
                 control.inspectedRoomProperty().set(null);
                 updateInspector();
                 drawFloorplan();
             });
-            control.tunnelConnectedProperty().addListener((obs, o, n) -> {
+            control.tunnelConnectedProperty().addListener((_, _, _) -> {
                 updateInspector();
                 drawFloorplan();
             });
-            control.resources().addListener((ListChangeListener<OfficeResource>) c -> {
+            control.resources().addListener((ListChangeListener<OfficeResource>) _ -> {
                 updateInspector();
                 drawFloorplan();
             });
@@ -231,7 +231,7 @@ public final class OfficeAtlas extends Control {
                     drawFloorplan();
                 }
             });
-            canvas.setOnMouseExited(e -> drawFloorplan());
+            canvas.setOnMouseExited(_ -> drawFloorplan());
             canvas.setOnMouseClicked(e -> {
                 control.requestFocus();
                 OfficeResource hit = hitTest(e.getX(), e.getY());

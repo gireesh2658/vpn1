@@ -65,7 +65,7 @@ public final class SafetyLatches extends Control {
             setMinSize(60, 30);
             setMaxSize(60, 30);
             armed.set(initialArmed);
-            armed.addListener((obs, o, n) -> pseudoClassStateChanged(PC_ARMED, Boolean.TRUE.equals(n)));
+            armed.addListener((_, _, n) -> pseudoClassStateChanged(PC_ARMED, Boolean.TRUE.equals(n)));
             pseudoClassStateChanged(PC_ARMED, initialArmed);
         }
 
@@ -117,12 +117,12 @@ public final class SafetyLatches extends Control {
                 track.setStyle("-fx-background-color: " + trackColor + "; -fx-background-radius: 10px; -fx-border-color: " + border + "; -fx-border-radius: 10px;");
             };
 
-            boltPos.addListener((obs, o, n) -> {
+            boltPos.addListener((_, _, n) -> {
                 double x = 4.0 + n.doubleValue() * 30.0;
                 bolt.resizeRelocate(x, 4.0, 22.0, 22.0);
             });
 
-            control.armedProperty().addListener((obs, o, n) -> {
+            control.armedProperty().addListener((_, _, n) -> {
                 paintState.run();
                 double target = Boolean.TRUE.equals(n) ? 1.0 : 0.0;
                 if (boltAnim != null) boltAnim.stop();
@@ -156,7 +156,7 @@ public final class SafetyLatches extends Control {
     private final BooleanProperty autoConnectUntrustedWifi = new SimpleBooleanProperty(true);
     private final BooleanProperty dnsLeakGuard = new SimpleBooleanProperty(true);
     private final ObservableList<SplitAppItem> splitApps = FXCollections.observableArrayList();
-    private final ObjectProperty<BiConsumer<String, Boolean>> onMoveSplitApp = new SimpleObjectProperty<>((id, t) -> {});
+    private final ObjectProperty<BiConsumer<String, Boolean>> onMoveSplitApp = new SimpleObjectProperty<>((_, _) -> {});
 
     public SafetyLatches() {
         getStyleClass().setAll("safety-latches");
@@ -172,7 +172,7 @@ public final class SafetyLatches extends Control {
         dnsLeakGuard.bindBidirectional(service.dnsLeakGuardProperty());
 
         Runnable syncApps = () -> splitApps.setAll(service.splitApps());
-        service.splitApps().addListener((ListChangeListener<SplitAppItem>) c -> syncApps.run());
+        service.splitApps().addListener((ListChangeListener<SplitAppItem>) _ -> syncApps.run());
         syncApps.run();
         onMoveSplitApp.set(service::moveSplitApp);
     }
@@ -236,7 +236,7 @@ public final class SafetyLatches extends Control {
             root.getChildren().addAll(latchesTitle, latchList, splitTitle, splitSub, lanesRow);
             getChildren().add(root);
 
-            control.splitApps().addListener((ListChangeListener<SplitAppItem>) c -> rebuildSplitChips());
+            control.splitApps().addListener((ListChangeListener<SplitAppItem>) _ -> rebuildSplitChips());
             rebuildSplitChips();
         }
 
@@ -254,7 +254,7 @@ public final class SafetyLatches extends Control {
 
             Label caption = new Label(prop.get() ? armedCaption : disarmedCaption);
             caption.getStyleClass().addAll("ia-pill", prop.get() ? "ia-pill-peacock" : "ia-pill-sand");
-            prop.addListener((obs, o, n) -> {
+            prop.addListener((_, _, n) -> {
                 caption.setText(Boolean.TRUE.equals(n) ? armedCaption : disarmedCaption);
                 caption.getStyleClass().removeAll("ia-pill-peacock", "ia-pill-sand");
                 caption.getStyleClass().add(Boolean.TRUE.equals(n) ? "ia-pill-peacock" : "ia-pill-sand");
@@ -293,7 +293,7 @@ public final class SafetyLatches extends Control {
                 }
                 e.consume();
             });
-            lane.setOnDragExited(e -> lane.getStyleClass().remove("split-lane-drop-active"));
+            lane.setOnDragExited(_ -> lane.getStyleClass().remove("split-lane-drop-active"));
             lane.setOnDragDropped(e -> {
                 Dragboard db = e.getDragboard();
                 boolean ok = false;
@@ -340,7 +340,7 @@ public final class SafetyLatches extends Control {
             moveBtn.setGraphic(Icons.ink(item.throughTunnel() ? Feather.ARROW_RIGHT : Feather.ARROW_LEFT, 13));
             moveBtn.setAccessibleText("Move " + item.displayName()
                     + (item.throughTunnel() ? " straight out" : " through tunnel"));
-            moveBtn.setOnAction(e -> {
+            moveBtn.setOnAction(_ -> {
                 var cb = getSkinnable().onMoveSplitAppProperty().get();
                 if (cb != null) cb.accept(item.appId(), !item.throughTunnel());
             });

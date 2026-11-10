@@ -52,7 +52,7 @@ public final class MyDevicesPanel extends VBox {
         Messages.configureAccessibleControl(copyFingerprintButton,
                 Messages.get("hardware.button.copyFp"),
                 Messages.get("hardware.tooltip.copyFp"));
-        copyFingerprintButton.setOnAction(e -> {
+        copyFingerprintButton.setOnAction(_ -> {
             UiSafe.copyToClipboard(fp);
             UiSafe.showInfo(UiSafe.windowOf(this), "Fingerprint Copied",
                     "Copied authentic SHA-256 hardware fingerprint to clipboard:\n" + fp);

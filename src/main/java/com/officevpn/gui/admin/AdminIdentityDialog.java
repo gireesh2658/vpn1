@@ -97,7 +97,7 @@ public final class AdminIdentityDialog {
         }
         form.getChildren().add(errorLabel);
 
-        ephemeralCheck.selectedProperty().addListener((obs, o, sel) -> {
+        ephemeralCheck.selectedProperty().addListener((_, _, sel) -> {
             passField.setDisable(sel);
             confirmField.setDisable(sel);
         });
@@ -113,9 +113,9 @@ public final class AdminIdentityDialog {
 
         final ServerIdentity[] resolvedRef = new ServerIdentity[1];
 
-        cancelBtn.setOnAction(e -> stage.close());
+        cancelBtn.setOnAction(_ -> stage.close());
 
-        okBtn.setOnAction(e -> {
+        okBtn.setOnAction(_ -> {
             if (ephemeralCheck.isSelected()) {
                 resolvedRef[0] = ServerIdentity.createEphemeral();
                 stage.close();

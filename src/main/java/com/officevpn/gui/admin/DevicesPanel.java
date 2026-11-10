@@ -76,15 +76,15 @@ public final class DevicesPanel extends VBox {
         filterBar.setAlignment(Pos.CENTER_LEFT);
         filterField.setPromptText(Messages.get("admin.devices.search.prompt"));
         filterField.setPrefWidth(320);
-        filterField.textProperty().addListener((obs, o, n) -> applyFilter());
+        filterField.textProperty().addListener((_, _, _) -> applyFilter());
 
         Button refreshButton = new Button(Messages.get("common.refresh"));
         refreshButton.getStyleClass().add("btn-secondary");
-        refreshButton.setOnAction(e -> refresh());
+        refreshButton.setOnAction(_ -> refresh());
 
         Button enrollDeviceButton = new Button(Messages.get("admin.devices.button.enroll"));
         enrollDeviceButton.getStyleClass().add("btn-primary");
-        enrollDeviceButton.setOnAction(e -> handleEnrollDialog());
+        enrollDeviceButton.setOnAction(_ -> handleEnrollDialog());
 
         Region fSpacer = new Region();
         HBox.setHgrow(fSpacer, Priority.ALWAYS);
@@ -101,33 +101,33 @@ public final class DevicesPanel extends VBox {
 
         List<Button> selBtns = List.of(trustDeviceButton, revokeDeviceButton, copyFingerprintButton, deleteDeviceButton);
         selBtns.forEach(b -> b.setDisable(true));
-        table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> {
+        table.getSelectionModel().selectedItemProperty().addListener((_, _, sel) -> {
             boolean has = sel != null;
             selBtns.forEach(b -> b.setDisable(!has));
         });
 
-        trustDeviceButton.setOnAction(e -> {
+        trustDeviceButton.setOnAction(_ -> {
             var d = table.getSelectionModel().getSelectedItem();
             if (d == null) return;
             CompletableFuture.runAsync(() -> deviceManager.trustDevice(d.username(), d.deviceFingerprint(), adminUsername))
                     .thenRun(() -> Platform.runLater(this::refresh));
         });
 
-        revokeDeviceButton.setOnAction(e -> {
+        revokeDeviceButton.setOnAction(_ -> {
             var d = table.getSelectionModel().getSelectedItem();
             if (d == null) return;
             CompletableFuture.runAsync(() -> deviceManager.revokeDevice(d.username(), d.deviceFingerprint(), adminUsername))
                     .thenRun(() -> Platform.runLater(this::refresh));
         });
 
-        copyFingerprintButton.setOnAction(e -> {
+        copyFingerprintButton.setOnAction(_ -> {
             var d = table.getSelectionModel().getSelectedItem();
             if (d != null) {
                 UiSafe.copyToClipboard(d.deviceFingerprint());
             }
         });
 
-        deleteDeviceButton.setOnAction(e -> {
+        deleteDeviceButton.setOnAction(_ -> {
             var d = table.getSelectionModel().getSelectedItem();
             if (d == null) return;
             if (UiSafe.showConfirm(UiSafe.windowOf(this), "Delete Device Record",

@@ -60,17 +60,17 @@ public final class ServerLogPanel extends VBox {
         toolbar.setAlignment(Pos.CENTER_LEFT);
         filterField.setPromptText("Filter console output...");
         filterField.setPrefWidth(260);
-        filterField.textProperty().addListener((obs, o, n) -> rerenderConsole());
+        filterField.textProperty().addListener((_, _, _) -> rerenderConsole());
 
         autoScrollCheck.setSelected(true);
 
         Button copyConsoleButton = new Button(Messages.get("admin.console.button.copyAll"));
         copyConsoleButton.getStyleClass().add("btn-secondary");
-        copyConsoleButton.setOnAction(e -> UiSafe.copyToClipboard(consoleArea.getText()));
+        copyConsoleButton.setOnAction(_ -> UiSafe.copyToClipboard(consoleArea.getText()));
 
         Button clearConsoleButton = new Button(Messages.get("admin.console.button.clear"));
         clearConsoleButton.getStyleClass().add("btn-danger");
-        clearConsoleButton.setOnAction(e -> {
+        clearConsoleButton.setOnAction(_ -> {
             logBuffer.clear();
             consoleArea.clear();
             countPill.setText("0 Lines");

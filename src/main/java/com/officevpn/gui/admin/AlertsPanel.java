@@ -64,26 +64,26 @@ public final class AlertsPanel extends VBox {
 
         HBox toolbar = new HBox(10);
         toolbar.setAlignment(Pos.CENTER_LEFT);
-        unreadOnlyCheck.setOnAction(e -> refresh());
+        unreadOnlyCheck.setOnAction(_ -> refresh());
 
         severityFilter.getItems().addAll("ALL SEVERITIES", "CRITICAL", "WARNING", "INFO");
         severityFilter.getSelectionModel().selectFirst();
-        severityFilter.setOnAction(e -> refresh());
+        severityFilter.setOnAction(_ -> refresh());
 
         Button refreshButton = new Button(Messages.get("common.refresh"));
         refreshButton.getStyleClass().add("btn-secondary");
-        refreshButton.setOnAction(e -> refresh());
+        refreshButton.setOnAction(_ -> refresh());
 
         Button markReadButton = new Button(Messages.get("admin.alerts.button.markRead"));
         markReadButton.getStyleClass().add("btn-primary");
         markReadButton.setDisable(true);
-        table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> markReadButton.setDisable(sel == null));
-        markReadButton.setOnAction(e -> {
+        table.getSelectionModel().selectedItemProperty().addListener((_, _, sel) -> markReadButton.setDisable(sel == null));
+        markReadButton.setOnAction(_ -> {
             AlertManager.SystemAlert sel = table.getSelectionModel().getSelectedItem();
             if (sel == null) return;
             markReadButton.setDisable(true);
             CompletableFuture.runAsync(() -> alertManager.markAlertRead(sel.id()))
-                    .whenComplete((v, err) -> Platform.runLater(() -> {
+                    .whenComplete((_, _) -> Platform.runLater(() -> {
                         markReadButton.setDisable(table.getSelectionModel().getSelectedItem() == null);
                         notifyRefresh();
                     }));
@@ -91,11 +91,11 @@ public final class AlertsPanel extends VBox {
 
         Button markAllReadButton = new Button(Messages.get("admin.alerts.button.markAllRead"));
         markAllReadButton.getStyleClass().add("btn-secondary");
-        markAllReadButton.setOnAction(e -> {
+        markAllReadButton.setOnAction(_ -> {
             List<AlertManager.SystemAlert> items = List.copyOf(table.getItems());
             markAllReadButton.setDisable(true);
             CompletableFuture.runAsync(() -> items.stream().filter(a -> !a.isRead()).forEach(a -> alertManager.markAlertRead(a.id())))
-                    .whenComplete((v, err) -> Platform.runLater(() -> {
+                    .whenComplete((_, _) -> Platform.runLater(() -> {
                         markAllReadButton.setDisable(false);
                         notifyRefresh();
                     }));
@@ -103,7 +103,7 @@ public final class AlertsPanel extends VBox {
 
         Button purgeAlertsButton = new Button(Messages.get("admin.alerts.button.purge"));
         purgeAlertsButton.getStyleClass().add("btn-warning");
-        purgeAlertsButton.setOnAction(e -> {
+        purgeAlertsButton.setOnAction(_ -> {
             Optional<String> daysOpt = UiSafe.promptText(UiSafe.windowOf(this),
                     "Purge Historical Alerts",
                     "Delete alerts older than N days:",

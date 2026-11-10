@@ -59,17 +59,17 @@ public final class ConfigPanel extends VBox {
 
         Button refreshButton = new Button(Messages.get("common.refresh"));
         refreshButton.getStyleClass().add("btn-secondary");
-        refreshButton.setOnAction(e -> refresh());
+        refreshButton.setOnAction(_ -> refresh());
 
         Button resetDefaultsButton = new Button(Messages.get("admin.config.button.resetDefaults"));
         resetDefaultsButton.getStyleClass().add("btn-warning");
-        resetDefaultsButton.setOnAction(e -> {
+        resetDefaultsButton.setOnAction(_ -> {
             if (UiSafe.showConfirm(UiSafe.windowOf(this), "Reset Configuration",
                     "Reset all allowlisted runtime parameters back to factory defaults?",
                     "This action is logged to the immutable audit trail.")) {
                 resetDefaultsButton.setDisable(true);
                 CompletableFuture.runAsync(() -> configManager.resetToDefaults(adminUsername))
-                        .whenComplete((v, err) -> Platform.runLater(() -> {
+                        .whenComplete((_, err) -> Platform.runLater(() -> {
                             resetDefaultsButton.setDisable(false);
                             if (err != null) {
                                 Throwable cause = err.getCause() != null ? err.getCause() : err;
@@ -103,7 +103,7 @@ public final class ConfigPanel extends VBox {
         saveSettingButton.getStyleClass().add("btn-primary");
         saveSettingButton.setDisable(true);
 
-        table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> {
+        table.getSelectionModel().selectedItemProperty().addListener((_, _, sel) -> {
             boolean has = sel != null;
             saveSettingButton.setDisable(!has);
             if (has) {
@@ -116,7 +116,7 @@ public final class ConfigPanel extends VBox {
             }
         });
 
-        saveSettingButton.setOnAction(e -> {
+        saveSettingButton.setOnAction(_ -> {
             String k = selectedKeyField.getText();
             String v = newValueField.getText();
             if (k == null || k.isBlank() || v == null) return;
@@ -124,7 +124,7 @@ public final class ConfigPanel extends VBox {
             String cleanVal = v.trim();
             saveSettingButton.setDisable(true);
             CompletableFuture.runAsync(() -> configManager.setConfig(adminUsername, cleanKey, cleanVal))
-                    .whenComplete((res, err) -> Platform.runLater(() -> {
+                    .whenComplete((_, err) -> Platform.runLater(() -> {
                         saveSettingButton.setDisable(table.getSelectionModel().getSelectedItem() == null);
                         if (err != null) {
                             Throwable cause = err.getCause() != null ? err.getCause() : err;
