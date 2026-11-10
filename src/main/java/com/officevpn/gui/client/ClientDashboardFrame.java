@@ -17,6 +17,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -26,6 +28,8 @@ import java.util.concurrent.CompletableFuture;
  * JavaFX Client Encrypted Intranet Dashboard &amp; Multi-Panel Workspace.
  */
 public final class ClientDashboardFrame {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ClientDashboardFrame.class);
 
     private final Stage stage;
     private final VpnClientEngine engine;
@@ -261,9 +265,13 @@ public final class ClientDashboardFrame {
         connectionStatusPanel.dispose();
         try {
             engine.removeClientEventListener(engineListener);
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            LOGGER.debug("Error detaching client event listener: {}", ex.getMessage());
+        }
         try {
             engine.close();
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            LOGGER.debug("Error closing VPN client engine: {}", ex.getMessage());
+        }
     }
 }

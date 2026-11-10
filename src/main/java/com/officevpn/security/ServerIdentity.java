@@ -224,7 +224,9 @@ public record ServerIdentity(KeyPair keyPair, String fingerprintHex, Path path) 
             } finally {
                 try {
                     Files.deleteIfExists(tempFile);
-                } catch (IOException ignored) {}
+                } catch (IOException cleanupEx) {
+                    LOGGER.debug("Ignoring temp server identity file cleanup failure: {}", cleanupEx.getMessage());
+                }
             }
 
             String fp = CryptoUtils.computeSha256FingerprintHex(kp.getPublic());

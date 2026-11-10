@@ -1,5 +1,6 @@
 package com.officevpn.security;
 
+import com.officevpn.config.ConfigUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -135,7 +136,7 @@ public final class KillSwitchManager {
         return clean.equals("127.0.0.1")
                 || clean.equalsIgnoreCase("localhost")
                 || clean.equals("::1")
-                || clean.equals("10.8.0.1");
+                || clean.equals(ConfigUtil.getGatewayVirtualIp());
     }
 
     public void addListener(KillSwitchListener listener) {

@@ -10,6 +10,8 @@ import com.officevpn.security.AuditSanitizer;
 import com.officevpn.security.CryptoUtils;
 import com.officevpn.security.ServerIdentity;
 import com.officevpn.storage.VaultManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -44,6 +46,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * </ul>
  */
 public final class VpnGatewayServer implements AutoCloseable {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(VpnGatewayServer.class);
 
     private final ServerIdentity serverIdentity;
     private final KeyPair serverKeyPair;
@@ -162,7 +166,9 @@ public final class VpnGatewayServer implements AutoCloseable {
         } catch (Exception e) {
             try {
                 this.serverSocket.close();
-            } catch (IOException ignored) {}
+            } catch (IOException closeEx) {
+                LOGGER.debug("Ignoring serverSocket close failure after bind failure: {}", closeEx.getMessage());
+            }
             throw new IllegalArgumentException("Failed to bind server to address: " + bindAddrStr + " (" + e.getMessage() + ")", e);
         }
         this.boundPort = serverSocket.getLocalPort();
@@ -217,7 +223,9 @@ public final class VpnGatewayServer implements AutoCloseable {
                 if (permit == null) {
                     try {
                         clientSocket.close();
-                    } catch (IOException ignored) {}
+                    } catch (IOException closeEx) {
+                        LOGGER.debug("Ignoring rejected client socket close error: {}", closeEx.getMessage());
+                    }
                     continue;
                 }
 
@@ -228,7 +236,9 @@ public final class VpnGatewayServer implements AutoCloseable {
                         connectionGuard.recordRejection(ConnectionGuard.RejectionReason.DEADLINE);
                         try {
                             targetSocket.close();
-                        } catch (IOException ignored) {}
+                        } catch (IOException closeEx) {
+                            LOGGER.debug("Ignoring handshake-deadline socket close error: {}", closeEx.getMessage());
+                        }
                     }
                 }, serverLimits.getHandshakeDeadlineMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
                 handler.setDeadlineTask(deadlineTask);
@@ -240,7 +250,9 @@ public final class VpnGatewayServer implements AutoCloseable {
                     deadlineTask.cancel(false);
                     try {
                         clientSocket.close();
-                    } catch (IOException ignored) {}
+                    } catch (IOException closeEx) {
+                        LOGGER.debug("Ignoring pool-full socket close error: {}", closeEx.getMessage());
+                    }
                     permit.release();
                 }
             } catch (java.net.SocketException e) {
@@ -261,7 +273,9 @@ public final class VpnGatewayServer implements AutoCloseable {
                 if (clientSocket != null && !clientSocket.isClosed()) {
                     try {
                         clientSocket.close();
-                    } catch (IOException ignored) {}
+                    } catch (IOException closeEx) {
+                        LOGGER.debug("Ignoring client socket close failure on accept error: {}", closeEx.getMessage());
+                    }
                 }
                 if (permit != null) {
                     permit.release();
@@ -562,7 +576,8 @@ public final class VpnGatewayServer implements AutoCloseable {
             if (serverSocket != null && !serverSocket.isClosed()) {
                 serverSocket.close();
             }
-        } catch (IOException ignored) {
+        } catch (IOException closeEx) {
+            LOGGER.debug("Ignoring server socket close error during stop(): {}", closeEx.getMessage());
         }
 
         // Terminate all connected and connecting client handlers

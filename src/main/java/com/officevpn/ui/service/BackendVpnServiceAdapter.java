@@ -117,11 +117,11 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     }
 
     private void syncGatewaysFromConfig() {
-        String host = ConfigUtil.getString("server.host", "127.0.0.1");
-        if ("0.0.0.0".equals(host)) host = "127.0.0.1";
+        String host = ConfigUtil.getString("server.host", ConfigUtil.getClientDefaultHost());
+        if ("0.0.0.0".equals(host)) host = ConfigUtil.getClientDefaultHost();
         int port = gatewayServer != null && gatewayServer.getBoundPort() > 0
                 ? gatewayServer.getBoundPort()
-                : ConfigUtil.getInt("server.port", 8443);
+                : ConfigUtil.getPort();
         String fp = gatewayServer != null ? gatewayServer.getServerPublicKeyFingerprintHex() : "configured-tofu";
         String shortFp = fp.length() > 12 ? fp.substring(0, 12) : fp;
         GatewayNode primary = new GatewayNode(

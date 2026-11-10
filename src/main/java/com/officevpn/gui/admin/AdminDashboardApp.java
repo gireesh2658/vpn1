@@ -85,14 +85,15 @@ public final class AdminDashboardApp {
                 return;
             }
 
-            Optional<ServerIdentity> identityOpt = AdminIdentityDialog.resolveIdentity(null, Path.of("server_data"));
+            Optional<ServerIdentity> identityOpt = AdminIdentityDialog.resolveIdentity(
+                    null, Path.of(ConfigUtil.getServerDataDir()));
             if (identityOpt.isEmpty()) {
                 closeQuietly();
                 Platform.exit();
                 return;
             }
 
-            VaultManager vault = new VaultManager(Path.of("server_vaults"));
+            VaultManager vault = new VaultManager(Path.of(ConfigUtil.getVaultRootDir()));
             gatewayServer = new VpnGatewayServer(db, vault, identityOpt.get());
 
             int port = ConfigUtil.getPort();

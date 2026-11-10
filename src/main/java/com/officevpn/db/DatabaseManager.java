@@ -58,8 +58,6 @@ public final class DatabaseManager implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DatabaseManager.class);
     private static final AtomicInteger POOL_COUNTER = new AtomicInteger(0);
-    public static final String DEFAULT_DB_URL =
-            "jdbc:mysql://127.0.0.1:3306/office_vpn?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&useUnicode=true&characterEncoding=UTF-8";
 
     private final String jdbcUrl;
     private final String dbUser;
@@ -320,7 +318,9 @@ public final class DatabaseManager implements AutoCloseable {
             if (this.dataSource != null) {
                 try {
                     this.dataSource.close();
-                } catch (Exception ignored) {}
+                } catch (Exception closeEx) {
+                    LOGGER.debug("Ignoring datasource close failure after init error: {}", closeEx.getMessage());
+                }
             }
             throw new IllegalStateException("Failed to initialize database connection pool for " + jdbcUrl + ": " + e.getMessage(), e);
         }
@@ -336,6 +336,24 @@ public final class DatabaseManager implements AutoCloseable {
             throw new SQLException("Database connection pool is closed");
         }
         return ds.getConnection();
+    }
+
+    private void rollbackQuietly(Connection conn) {
+        if (conn == null) return;
+        try {
+            conn.rollback();
+        } catch (SQLException ex) {
+            LOGGER.debug("Database rollback failed during error cleanup: {}", ex.getMessage());
+        }
+    }
+
+    private void restoreAutoCommitQuietly(Connection conn, boolean oldAutoCommit) {
+        if (conn == null) return;
+        try {
+            conn.setAutoCommit(oldAutoCommit);
+        } catch (SQLException ex) {
+            LOGGER.debug("Restoring auto-commit state failed: {}", ex.getMessage());
+        }
     }
 
     /**
@@ -500,7 +518,9 @@ public final class DatabaseManager implements AutoCloseable {
             if (rs.next()) {
                 try {
                     currentVersion = Integer.parseInt(rs.getString(1).trim());
-                } catch (NumberFormatException ignored) {}
+                } catch (NumberFormatException nfe) {
+                    LOGGER.debug("Ignoring non-numeric schema_version '{}'", rs.getString(1));
+                }
             }
         }
         if (currentVersion >= 4) {
@@ -640,7 +660,9 @@ public final class DatabaseManager implements AutoCloseable {
         if (java.nio.file.Files.isRegularFile(headPath)) {
             try {
                 return java.nio.file.Files.readString(headPath, java.nio.charset.StandardCharsets.UTF_8).trim();
-            } catch (IOException ignored) {}
+            } catch (IOException ex) {
+                LOGGER.debug("Unable to read audit anchor file {}: {}", headPath, ex.getMessage());
+            }
         }
         return "";
     }
@@ -654,7 +676,9 @@ public final class DatabaseManager implements AutoCloseable {
             pstmt.setLong(1, cutoff);
             pstmt.setLong(2, cutoff);
             pstmt.executeUpdate();
-        } catch (SQLException ignored) {}
+        } catch (SQLException ex) {
+            LOGGER.debug("Unable to purge expired auth failures: {}", ex.getMessage());
+        }
     }
 
     private void maybePruneAuthFailuresTable(Connection conn) {
@@ -668,7 +692,9 @@ public final class DatabaseManager implements AutoCloseable {
                     del.executeUpdate();
                 }
             }
-        } catch (SQLException ignored) {}
+        } catch (SQLException ex) {
+            LOGGER.debug("Unable to prune auth_failures table: {}", ex.getMessage());
+        }
     }
 
     /**
@@ -709,7 +735,9 @@ public final class DatabaseManager implements AutoCloseable {
             // Purge synthetic demo devices from previous test runs so hardware trust reflects authentic devices only
             try (Statement purgeStmt = conn.createStatement()) {
                 purgeStmt.executeUpdate("DELETE FROM user_devices WHERE device_fingerprint LIKE 'DEV-FP-%' OR device_name LIKE '%ThinkPad%' OR device_name LIKE '%MacBook%' OR device_name LIKE '%Latitude%' OR device_name LIKE '%ThinkCentre%'");
-            } catch (SQLException ignored) {}
+            } catch (SQLException ex) {
+                LOGGER.debug("Skipping legacy device cleanup check: {}", ex.getMessage());
+            }
         } catch (SQLException e) {
             LOGGER.warn("Failed opening connection while checking legacy credentials: {}", e.getMessage());
         }
@@ -819,12 +847,12 @@ public final class DatabaseManager implements AutoCloseable {
                     conn.commit();
                     return getUserByUsername(conn, username.trim());
                 } catch (Exception e) {
-                    try { conn.rollback(); } catch (SQLException ignored) {}
+                    rollbackQuietly(conn);
                     if (e instanceof AuditUnavailableException aue) throw aue;
                     if (e instanceof RuntimeException re) throw re;
                     throw new IllegalStateException("Failed to create user: " + e.getMessage(), e);
                 } finally {
-                    try { conn.setAutoCommit(oldAutoCommit); } catch (SQLException ignored) {}
+                    restoreAutoCommitQuietly(conn, oldAutoCommit);
                 }
             } catch (SQLException e) {
                 throw new IllegalStateException("Database connection error creating user: " + e.getMessage(), e);
@@ -887,12 +915,12 @@ public final class DatabaseManager implements AutoCloseable {
                     conn.rollback();
                     return false;
                 } catch (Exception e) {
-                    try { conn.rollback(); } catch (SQLException ignored) {}
+                    rollbackQuietly(conn);
                     if (e instanceof AuditUnavailableException aue) throw aue;
                     if (e instanceof RuntimeException re) throw re;
                     throw new IllegalStateException("Failed to reset password: " + e.getMessage(), e);
                 } finally {
-                    try { conn.setAutoCommit(oldAutoCommit); } catch (SQLException ignored) {}
+                    restoreAutoCommitQuietly(conn, oldAutoCommit);
                 }
             } catch (SQLException e) {
                 throw new IllegalStateException("Database connection error resetting password: " + e.getMessage(), e);
@@ -952,12 +980,12 @@ public final class DatabaseManager implements AutoCloseable {
                 conn.rollback();
                 return false;
             } catch (Exception e) {
-                try { conn.rollback(); } catch (SQLException ignored) {}
+                rollbackQuietly(conn);
                 if (e instanceof AuditUnavailableException aue) throw aue;
                 if (e instanceof RuntimeException re) throw re;
                 throw new IllegalStateException("Failed to change user role: " + e.getMessage(), e);
             } finally {
-                try { conn.setAutoCommit(oldAutoCommit); } catch (SQLException ignored) {}
+                restoreAutoCommitQuietly(conn, oldAutoCommit);
             }
         } catch (SQLException e) {
             throw new IllegalStateException("Database connection error changing role: " + e.getMessage(), e);
@@ -1016,12 +1044,12 @@ public final class DatabaseManager implements AutoCloseable {
                 conn.rollback();
                 return false;
             } catch (Exception e) {
-                try { conn.rollback(); } catch (SQLException ignored) {}
+                rollbackQuietly(conn);
                 if (e instanceof AuditUnavailableException aue) throw aue;
                 if (e instanceof RuntimeException re) throw re;
                 throw new IllegalStateException("Failed to change user department: " + e.getMessage(), e);
             } finally {
-                try { conn.setAutoCommit(oldAutoCommit); } catch (SQLException ignored) {}
+                restoreAutoCommitQuietly(conn, oldAutoCommit);
             }
         } catch (SQLException e) {
             throw new IllegalStateException("Database connection error changing department: " + e.getMessage(), e);
@@ -1079,12 +1107,12 @@ public final class DatabaseManager implements AutoCloseable {
                 conn.rollback();
                 return false;
             } catch (Exception e) {
-                try { conn.rollback(); } catch (SQLException ignored) {}
+                rollbackQuietly(conn);
                 if (e instanceof AuditUnavailableException aue) throw aue;
                 if (e instanceof RuntimeException re) throw re;
                 throw new IllegalStateException("Failed to update user active status: " + e.getMessage(), e);
             } finally {
-                try { conn.setAutoCommit(oldAutoCommit); } catch (SQLException ignored) {}
+                restoreAutoCommitQuietly(conn, oldAutoCommit);
             }
         } catch (SQLException e) {
             throw new IllegalStateException("Database connection error updating user status: " + e.getMessage(), e);
@@ -1134,12 +1162,12 @@ public final class DatabaseManager implements AutoCloseable {
                 conn.rollback();
                 return false;
             } catch (Exception e) {
-                try { conn.rollback(); } catch (SQLException ignored) {}
+                rollbackQuietly(conn);
                 if (e instanceof AuditUnavailableException aue) throw aue;
                 if (e instanceof RuntimeException re) throw re;
                 throw new IllegalStateException("Failed to delete user: " + e.getMessage(), e);
             } finally {
-                try { conn.setAutoCommit(oldAutoCommit); } catch (SQLException ignored) {}
+                restoreAutoCommitQuietly(conn, oldAutoCommit);
             }
         } catch (SQLException e) {
             throw new IllegalStateException("Database connection error deleting user: " + e.getMessage(), e);
@@ -1165,7 +1193,9 @@ public final class DatabaseManager implements AutoCloseable {
                     );
                 }
             }
-        } catch (SQLException ignored) {}
+        } catch (SQLException ex) {
+            LOGGER.warn("Failed fetching user snapshot for '{}': {}", username, ex.getMessage());
+        }
         return null;
     }
 
@@ -1272,7 +1302,9 @@ public final class DatabaseManager implements AutoCloseable {
             if (needsUpgrade) {
                 try {
                     upgradedHash = passwordHasher.hash(rawPassword);
-                } catch (Exception ignored) {}
+                } catch (Exception ex) {
+                    LOGGER.debug("Deferred opportunistic password hash upgrade: {}", ex.getMessage());
+                }
             }
         }
 
@@ -1390,7 +1422,9 @@ public final class DatabaseManager implements AutoCloseable {
                     lockUntil = rs.getLong("lock_until_ms");
                 }
             }
-        } catch (SQLException ignored) {}
+        } catch (SQLException ex) {
+            LOGGER.warn("Failed reading auth failure record for '{}': {}", usernameLc, ex.getMessage());
+        }
 
         if (!rowExists || (now - windowStart > fifteenMinutes && now >= lockUntil)) {
             failCount = 1;
@@ -1435,7 +1469,9 @@ public final class DatabaseManager implements AutoCloseable {
             upsert.setLong(9, lockUntil);
             upsert.setInt(10, lockLevel);
             upsert.executeUpdate();
-        } catch (SQLException ignored) {}
+        } catch (SQLException ex) {
+            LOGGER.warn("Failed updating auth failure record for '{}': {}", usernameLc, ex.getMessage());
+        }
 
         // Check cross-IP distributed attack detection
         String sumSql = "SELECT SUM(fail_count) FROM auth_failures WHERE username_lc = ? AND window_start_ms >= ?";
@@ -1456,7 +1492,9 @@ public final class DatabaseManager implements AutoCloseable {
                     }
                 }
             }
-        } catch (SQLException ignored) {}
+        } catch (SQLException ex) {
+            LOGGER.debug("Failed computing cross-IP failure aggregate for '{}': {}", usernameLc, ex.getMessage());
+        }
 
         maybePruneAuthFailuresTable(conn);
     }
@@ -1467,7 +1505,9 @@ public final class DatabaseManager implements AutoCloseable {
             pstmt.setString(1, usernameLc);
             pstmt.setString(2, ip);
             pstmt.executeUpdate();
-        } catch (SQLException ignored) {}
+        } catch (SQLException ex) {
+            LOGGER.debug("Failed resetting auth failure counter for '{}': {}", usernameLc, ex.getMessage());
+        }
     }
 
     private void applyUpgradedHash(Connection conn, String username, String oldHash, String newHash) {
@@ -1481,7 +1521,9 @@ public final class DatabaseManager implements AutoCloseable {
                 logAuditEvent(conn, "PASSWORD_HASH_UPGRADED", username, "UNKNOWN",
                         "Password hash upgraded to latest security parameters", username, "local");
             }
-        } catch (SQLException ignored) {}
+        } catch (SQLException ex) {
+            LOGGER.debug("Deferred password hash upgrade persistence for '{}': {}", username, ex.getMessage());
+        }
     }
 
     public synchronized boolean unlockAccount(String username, String actor) {
@@ -1509,12 +1551,12 @@ public final class DatabaseManager implements AutoCloseable {
                 conn.commit();
                 return true;
             } catch (Exception e) {
-                try { conn.rollback(); } catch (SQLException ignored) {}
+                rollbackQuietly(conn);
                 if (e instanceof AuditUnavailableException aue) throw aue;
                 if (e instanceof RuntimeException re) throw re;
                 throw new IllegalStateException("Failed to unlock account: " + e.getMessage(), e);
             } finally {
-                try { conn.setAutoCommit(oldAutoCommit); } catch (SQLException ignored) {}
+                restoreAutoCommitQuietly(conn, oldAutoCommit);
             }
         } catch (SQLException e) {
             throw new IllegalStateException("Database connection error unlocking account: " + e.getMessage(), e);
@@ -1740,7 +1782,9 @@ public final class DatabaseManager implements AutoCloseable {
                     }
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            LOGGER.debug("Unable to evaluate audit capacity threshold: {}", ex.getMessage());
+        }
     }
 
     /**
@@ -1928,7 +1972,9 @@ public final class DatabaseManager implements AutoCloseable {
                     ));
                 }
             }
-        } catch (SQLException ignored) {}
+        } catch (SQLException ex) {
+            LOGGER.warn("Failed fetching audit verification batch from seq {}: {}", startSeq, ex.getMessage());
+        }
         return batch;
     }
 
@@ -2745,7 +2791,9 @@ public final class DatabaseManager implements AutoCloseable {
             ps.setString(2, username);
             ps.setString(3, deviceFingerprint);
             ps.executeUpdate();
-        } catch (SQLException ignored) {}
+        } catch (SQLException ex) {
+            LOGGER.debug("Unable to update last_seen_at for device of '{}': {}", username, ex.getMessage());
+        }
     }
 
     public synchronized int trustAllDevicesForUser(String username) {
@@ -2812,7 +2860,9 @@ public final class DatabaseManager implements AutoCloseable {
                         return count;
                     }
                 }
-            } catch (SQLException ignored) {}
+            } catch (SQLException ex) {
+                LOGGER.debug("Falling back to audit_logs for daily connection count: {}", ex.getMessage());
+            }
 
             String auditSql = "SELECT COUNT(*) FROM audit_logs WHERE ts_ms >= ? AND event_type = 'TUNNEL_ESTABLISHED'";
             try (PreparedStatement ps = conn.prepareStatement(auditSql)) {

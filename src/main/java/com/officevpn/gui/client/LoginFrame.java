@@ -33,7 +33,7 @@ public final class LoginFrame {
     private final Stage stage;
     private final TrustedFingerprintStore fingerprintStore;
 
-    private final TextField hostField = new TextField("127.0.0.1");
+    private final TextField hostField = new TextField(ConfigUtil.getClientDefaultHost());
     private final TextField portField = new TextField(String.valueOf(ConfigUtil.getPort()));
     private final TextField expectedFpField = new TextField();
     private final TextField usernameField = new TextField();
@@ -85,7 +85,7 @@ public final class LoginFrame {
         netGrid.getColumnConstraints().addAll(c0, c1);
 
         hostField.setPromptText("Gateway host or IP");
-        portField.setPromptText("8443");
+        portField.setPromptText(String.valueOf(ConfigUtil.getPort()));
         hostField.textProperty().addListener((obs, o, n) -> refreshStoredPinIndicator());
         portField.textProperty().addListener((obs, o, n) -> refreshStoredPinIndicator());
 

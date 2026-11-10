@@ -33,7 +33,7 @@ public final class VpnServer implements AutoCloseable {
     }
 
     public VpnServer(int port) {
-        this(port, new DatabaseManager(), new VaultManager(Path.of("server_vaults")), resolveServerIdentity());
+        this(port, new DatabaseManager(), new VaultManager(Path.of(ConfigUtil.getVaultRootDir())), resolveServerIdentity());
     }
 
     public VpnServer(int port, DatabaseManager db, VaultManager vaultManager, ServerIdentity identity) {

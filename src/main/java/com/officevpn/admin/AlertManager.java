@@ -132,7 +132,9 @@ public final class AlertManager {
             try {
                 AlertType t = AlertType.valueOf(r.alertType().toUpperCase(Locale.ROOT));
                 map.put(t, map.getOrDefault(t, 0) + 1);
-            } catch (Exception ignored) {}
+            } catch (Exception ex) {
+                LOGGER.debug("Skipping unrecognized alert type '{}': {}", r.alertType(), ex.getMessage());
+            }
         }
         return map;
     }

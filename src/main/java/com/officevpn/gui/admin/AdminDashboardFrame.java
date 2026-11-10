@@ -29,6 +29,8 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import javafx.util.Duration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -38,6 +40,8 @@ import java.util.concurrent.CompletableFuture;
  * JavaFX Headquarters Administrator Control Deck &amp; Multi-View Gateway Console.
  */
 public final class AdminDashboardFrame {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(AdminDashboardFrame.class);
 
     private final Stage stage;
     private final DatabaseManager db;
@@ -432,13 +436,19 @@ public final class AdminDashboardFrame {
         }
         try {
             gatewayServer.removeServerEventListener(serverListener);
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            LOGGER.debug("Error detaching server event listener on shutdown: {}", ex.getMessage());
+        }
         try {
             gatewayServer.stop();
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            LOGGER.warn("Error stopping gateway server on shutdown: {}", ex.getMessage());
+        }
         try {
             db.close();
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            LOGGER.warn("Error closing database pool on shutdown: {}", ex.getMessage());
+        }
         Platform.exit();
     }
 }

@@ -98,7 +98,9 @@ public final class AuditKeyStore {
                     this.inMemoryKey = bytes.clone();
                     return bytes;
                 }
-            } catch (IOException ignored) {}
+            } catch (IOException ex) {
+                LOGGER.warn("Failed to read audit key from {}: {}", keyFile, ex.getMessage());
+            }
         }
         return null;
     }
@@ -198,7 +200,9 @@ public final class AuditKeyStore {
         } finally {
             try {
                 Files.deleteIfExists(tempFile);
-            } catch (IOException ignored) {}
+            } catch (IOException cleanupEx) {
+                LOGGER.debug("Ignoring temp audit head file cleanup failure: {}", cleanupEx.getMessage());
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 package com.officevpn.client;
 
+import com.officevpn.config.ConfigUtil;
 import com.officevpn.model.Department;
 import com.officevpn.model.Role;
 import com.officevpn.protocol.PacketType;
@@ -13,6 +14,8 @@ import com.officevpn.security.TrustedFingerprintStore;
 import com.officevpn.tunnel.TunnelManager;
 import com.officevpn.network.DnsLeakProtection;
 import com.officevpn.util.HardwareUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -57,6 +60,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * </ul>
  */
 public final class VpnClientEngine implements AutoCloseable {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(VpnClientEngine.class);
 
     /**
      * Configuration options for client operational and transfer deadlines.
@@ -726,7 +731,8 @@ public final class VpnClientEngine implements AutoCloseable {
 
             VerifiedPacket res = sendAndAwait(req, reqId, PacketType.PING, 10_000);
             return res != null && res.packet().getType() == PacketType.PING && "PONG".equals(res.packet().getMetadata().get("status"));
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            LOGGER.debug("Keepalive ping tick failed: {}", ex.getMessage());
             return false;
         } finally {
             opLock.unlock();
@@ -803,7 +809,8 @@ public final class VpnClientEngine implements AutoCloseable {
                     if (packet.getMetadata() != null && packet.getMetadata().containsKey("reqId")) {
                         try {
                             respReqId = Long.parseLong(packet.getMetadata().get("reqId"));
-                        } catch (NumberFormatException ignored) {
+                        } catch (NumberFormatException nfe) {
+                            LOGGER.debug("Ignoring malformed reqId metadata '{}'", packet.getMetadata().get("reqId"));
                         }
                     }
 
@@ -887,7 +894,7 @@ public final class VpnClientEngine implements AutoCloseable {
         try {
             if (packet != null && packet.getType() != PacketType.HANDSHAKE_INIT && packet.getType() != PacketType.HANDSHAKE_SESSION_KEY) {
                 String dest = (socket != null && socket.getInetAddress() != null)
-                        ? socket.getInetAddress().getHostAddress() : "127.0.0.1";
+                        ? socket.getInetAddress().getHostAddress() : ConfigUtil.getClientDefaultHost();
                 if (!killSwitchManager.isTrafficAllowed(dest)) {
                     throw new KillSwitchBlockedException("Outbound transmission blocked by active Kill Switch to " + dest);
                 }
@@ -961,14 +968,16 @@ public final class VpnClientEngine implements AutoCloseable {
                 );
                 sendRawPacket(disconnectPacket);
             }
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            LOGGER.debug("Ignoring disconnect packet notification error: {}", ex.getMessage());
         }
 
         try {
             if (socket != null && !socket.isClosed()) {
                 socket.close();
             }
-        } catch (IOException ignored) {
+        } catch (IOException ex) {
+            LOGGER.debug("Ignoring socket close failure on disconnect: {}", ex.getMessage());
         }
 
         if (receiverThread != null && receiverThread.isAlive()) {

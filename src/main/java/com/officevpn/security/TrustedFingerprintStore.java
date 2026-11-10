@@ -1,5 +1,6 @@
 package com.officevpn.security;
 
+import com.officevpn.config.ConfigUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,7 +38,7 @@ public final class TrustedFingerprintStore {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TrustedFingerprintStore.class);
 
-    public static final String DEFAULT_PIN_FILE = "known_gateways.properties";
+    public static final String DEFAULT_PIN_FILE = ConfigUtil.getFingerprintStoreFile();
     public static final String LEGACY_PIN_FILE = "client_trusted_fingerprints.properties";
 
     private final Path storagePath;
@@ -114,7 +115,9 @@ public final class TrustedFingerprintStore {
             } finally {
                 try {
                     Files.deleteIfExists(tempFile);
-                } catch (IOException ignored) {}
+                } catch (IOException cleanupEx) {
+                    LOGGER.debug("Ignoring temp fingerprint file cleanup failure: {}", cleanupEx.getMessage());
+                }
             }
         } catch (IOException e) {
             LOGGER.error("Failed to save trusted fingerprints: {}", e.getMessage());

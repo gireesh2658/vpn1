@@ -76,10 +76,21 @@ public final class ConfigUtil {
         PROPERTIES.setProperty("db.url", "");
         PROPERTIES.setProperty("device.maxPerUser", "3");
 
-        // Tunneling
+        // Server & Client Paths / Defaults
+        PROPERTIES.setProperty("server.dataDir", "server_data");
+        PROPERTIES.setProperty("vault.rootDir", "server_vaults");
+        PROPERTIES.setProperty("client.defaultHost", "127.0.0.1");
+        PROPERTIES.setProperty("client.fingerprintStoreFile", "known_gateways.properties");
+
+        // Tunneling & Virtual Subnet
+        PROPERTIES.setProperty("vpn.gatewayVirtualIp", "10.8.0.1");
+        PROPERTIES.setProperty("vpn.subnet.prefix", "10.8.0.");
+        PROPERTIES.setProperty("vpn.branchSubnet.prefix", "10.9.0.");
         PROPERTIES.setProperty("tunnel.mode", "SPLIT");
         PROPERTIES.setProperty("tunnel.full.enabled", "true");
         PROPERTIES.setProperty("tunnel.split.officeDomains", "office.local,officevpn.local");
+        PROPERTIES.setProperty("tunnel.split.officeSubnets", "10.8.0.0/24,10.9.0.0/24");
+        PROPERTIES.setProperty("tunnel.split.bypassRoutes", "127.0.0.1,localhost,::1");
 
         // DNS Leak Protection
         PROPERTIES.setProperty("dns.vpn", "10.8.0.1");
@@ -152,6 +163,50 @@ public final class ConfigUtil {
 
     public static int getPort() {
         return getInt("server.port", 8443);
+    }
+
+    public static String getClientDefaultHost() {
+        return getConfigOverride("officevpn.client.host", "OFFICEVPN_CLIENT_HOST", "client.defaultHost", "127.0.0.1");
+    }
+
+    public static String getServerDataDir() {
+        return getConfigOverride("officevpn.server.dataDir", "OFFICEVPN_SERVER_DATA_DIR", "server.dataDir", "server_data");
+    }
+
+    public static String getVaultRootDir() {
+        return getConfigOverride("officevpn.vault.dir", "OFFICEVPN_VAULT_DIR", "vault.rootDir", "server_vaults");
+    }
+
+    public static String getFingerprintStoreFile() {
+        return getString("client.fingerprintStoreFile", "known_gateways.properties");
+    }
+
+    public static String getGatewayVirtualIp() {
+        return getString("vpn.gatewayVirtualIp", "10.8.0.1");
+    }
+
+    public static String getSubnetPrefix() {
+        return getString("vpn.subnet.prefix", "10.8.0.");
+    }
+
+    public static String getBranchSubnetPrefix() {
+        return getString("vpn.branchSubnet.prefix", "10.9.0.");
+    }
+
+    public static List<String> getOfficeSubnets() {
+        String raw = getString("tunnel.split.officeSubnets", "10.8.0.0/24,10.9.0.0/24");
+        return Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+    }
+
+    public static List<String> getTunnelBypassRoutes() {
+        String raw = getString("tunnel.split.bypassRoutes", "127.0.0.1,localhost,::1");
+        return Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
     }
 
     public static String getDbHost() {
