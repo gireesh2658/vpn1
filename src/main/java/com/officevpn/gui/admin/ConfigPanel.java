@@ -1,234 +1,144 @@
 package com.officevpn.gui.admin;
 
 import com.officevpn.admin.ConfigManager;
-import com.officevpn.admin.ServerManager;
 import com.officevpn.gui.UiSafe;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.TableView;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
 
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTable;
-import javax.swing.ListSelectionModel;
-import javax.swing.SwingWorker;
-import javax.swing.table.DefaultTableModel;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.FlowLayout;
-import java.awt.Font;
 import java.util.Map;
 
 /**
- * Headquarters Admin Dashboard System Configuration &amp; Server Control Panel.
+ * JavaFX Allowlisted Runtime Configuration Governance Panel.
  */
-public final class ConfigPanel extends JPanel {
+public final class ConfigPanel extends VBox {
 
-    private static final long serialVersionUID = 1L;
+    public record ConfigEntryRow(String key, String value, String constraints) {}
 
-    private final transient ConfigManager configManager;
-    private transient ServerManager serverManager;
+    private final ConfigManager configManager;
     private final String adminUsername;
 
-    private final JLabel serverStatusLabel = new JLabel("Status: -");
-    private final JButton startBtn = new JButton("Start Server");
-    private final JButton stopBtn = new JButton("Stop Server");
-    private final JButton restartBtn = new JButton("Restart Server");
+    private final TableView<ConfigEntryRow> table = new TableView<>();
+    private final TextField selectedKeyField = new TextField();
+    private final TextField newValueField = new TextField();
+    private final Label feedbackLabel = new Label("");
 
-    private final DefaultTableModel tableModel;
-    private final JTable configTable;
-
-    public ConfigPanel(ConfigManager configManager, ServerManager serverManager, String adminUsername) {
-        super(new BorderLayout(10, 10));
+    public ConfigPanel(ConfigManager configManager, String adminUsername) {
         this.configManager = configManager;
-        this.serverManager = serverManager;
         this.adminUsername = adminUsername != null ? adminUsername : "admin_hq";
-        setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        setSpacing(14);
+        setPadding(new Insets(18));
+        buildUi();
+        refresh();
+    }
 
-        // North: Server Control Card
-        JPanel serverCard = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 8));
-        serverCard.setBorder(BorderFactory.createTitledBorder("Gateway Server Controls"));
-        serverStatusLabel.setFont(new Font("SansSerif", Font.BOLD, 13));
-        serverCard.add(serverStatusLabel);
+    private void buildUi() {
+        HBox header = new HBox(10);
+        header.setAlignment(Pos.CENTER_LEFT);
+        VBox titleBox = new VBox(2);
+        Label title = new Label("Gateway Runtime Configuration");
+        title.getStyleClass().add("page-title");
+        Label subtitle = new Label("Inspect and adjust allowlisted gateway parameters with strict validation & MySQL audit logging");
+        subtitle.getStyleClass().add("page-subtitle");
+        titleBox.getChildren().addAll(title, subtitle);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        startBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
-        startBtn.setForeground(new Color(0, 115, 40));
-        startBtn.setBackground(new Color(235, 250, 238));
-        startBtn.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(0, 140, 50), 1),
-                BorderFactory.createEmptyBorder(4, 10, 4, 10)
-        ));
-        startBtn.addActionListener(e -> startServer());
+        Button refreshBtn = new Button("Refresh");
+        refreshBtn.getStyleClass().add("btn-secondary");
+        refreshBtn.setOnAction(e -> refresh());
 
-        stopBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
-        stopBtn.setForeground(new Color(180, 25, 25));
-        stopBtn.setBackground(new Color(254, 240, 240));
-        stopBtn.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(200, 35, 35), 1),
-                BorderFactory.createEmptyBorder(4, 10, 4, 10)
-        ));
-        stopBtn.addActionListener(e -> stopServer());
-
-        restartBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
-        restartBtn.setForeground(new Color(15, 75, 160));
-        restartBtn.setBackground(new Color(238, 245, 255));
-        restartBtn.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(30, 100, 200), 1),
-                BorderFactory.createEmptyBorder(4, 10, 4, 10)
-        ));
-        restartBtn.addActionListener(e -> restartServer());
-
-        serverCard.add(startBtn);
-        serverCard.add(stopBtn);
-        serverCard.add(restartBtn);
-        add(serverCard, BorderLayout.NORTH);
-
-        // Center: Config Table
-        String[] columns = {"Configuration Key", "Runtime Value"};
-        tableModel = new DefaultTableModel(columns, 0) {
-            @Override
-            public boolean isCellEditable(int row, int col) {
-                return false;
+        Button resetBtn = new Button("Reset All Defaults");
+        resetBtn.getStyleClass().add("btn-warning");
+        resetBtn.setOnAction(e -> {
+            if (UiSafe.showConfirm(UiSafe.windowOf(this), "Reset Configuration",
+                    "Reset all allowlisted runtime parameters back to secure factory defaults?",
+                    "This action is logged to the immutable audit trail.")) {
+                configManager.resetToDefaults(adminUsername);
+                refresh();
+                feedbackLabel.setText("All allowlisted settings reset to factory defaults.");
             }
-        };
+        });
+        header.getChildren().addAll(titleBox, spacer, refreshBtn, resetBtn);
 
-        configTable = new JTable(tableModel);
-        configTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        configTable.setRowHeight(24);
-        add(new JScrollPane(configTable), BorderLayout.CENTER);
+        UiSafe.configureSafeTable(table);
+        table.getColumns().add(UiSafe.safeColumn("Configuration Key", ConfigEntryRow::key, 240));
+        table.getColumns().add(UiSafe.safeColumn("Current Value", ConfigEntryRow::value, 160));
+        table.getColumns().add(UiSafe.safeColumn("Allowed Constraints", ConfigEntryRow::constraints, 340));
+        VBox.setVgrow(table, Priority.ALWAYS);
 
-        // South: Config Actions
-        JPanel southPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
-        JButton editBtn = new JButton("Edit Selected Parameter");
-        editBtn.addActionListener(e -> editSelectedConfig());
-        southPanel.add(editBtn);
+        HBox editorRow = new HBox(10);
+        editorRow.setAlignment(Pos.CENTER_LEFT);
+        selectedKeyField.setPromptText("Select a parameter above");
+        selectedKeyField.setEditable(false);
+        selectedKeyField.setPrefWidth(250);
+        selectedKeyField.getStyleClass().add("mono-text");
 
-        JButton resetBtn = new JButton("Reset to Defaults");
-        resetBtn.addActionListener(e -> resetDefaults());
-        southPanel.add(resetBtn);
+        newValueField.setPromptText("Enter new value...");
+        newValueField.setPrefWidth(220);
 
-        JButton refreshBtn = new JButton("Refresh");
-        refreshBtn.addActionListener(e -> refreshData());
-        southPanel.add(refreshBtn);
+        Button applyBtn = new Button("Apply & Audit");
+        applyBtn.getStyleClass().add("btn-primary");
+        applyBtn.setDisable(true);
 
-        add(southPanel, BorderLayout.SOUTH);
-
-        refreshData();
-    }
-
-    public void bindServer(ServerManager serverManager) {
-        this.serverManager = serverManager;
-        refreshData();
-    }
-
-    public void refreshData() {
-        if (serverManager != null) {
-            String status = serverManager.getServerStatus();
-            int port = serverManager.getBoundPort();
-            serverStatusLabel.setText(String.format("Gateway Status: %s (Port: %d, VIP: %s)",
-                    status, port > 0 ? port : 8443, serverManager.getGatewayIp()));
-            serverStatusLabel.setForeground("RUNNING".equals(status) ? new Color(0, 140, 0) : Color.RED);
-            startBtn.setEnabled(!"RUNNING".equals(status));
-            stopBtn.setEnabled("RUNNING".equals(status));
-            restartBtn.setEnabled("RUNNING".equals(status));
-        } else {
-            serverStatusLabel.setText("Gateway Status: STOPPED (Port: 8443, VIP: 10.8.0.1)");
-            serverStatusLabel.setForeground(Color.RED);
-            startBtn.setEnabled(true);
-            stopBtn.setEnabled(false);
-            restartBtn.setEnabled(false);
-        }
-
-        if (configManager != null) {
-            Map<String, String> configs = configManager.getAllConfigs();
-            tableModel.setRowCount(0);
-            for (Map.Entry<String, String> e : configs.entrySet()) {
-                tableModel.addRow(new Object[]{e.getKey(), e.getValue()});
+        table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> {
+            boolean has = sel != null;
+            applyBtn.setDisable(!has);
+            if (has) {
+                selectedKeyField.setText(sel.key());
+                newValueField.setText(sel.value());
+                feedbackLabel.setText("Editing '" + sel.key() + "' (" + sel.constraints() + ")");
+            } else {
+                selectedKeyField.clear();
+                newValueField.clear();
             }
-        }
-    }
+        });
 
-    private void editSelectedConfig() {
-        int row = configTable.getSelectedRow();
-        if (row < 0) {
-            UiSafe.showMessageDialog(this, "Please select a configuration parameter row to edit.", "No Selection", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        String key = String.valueOf(tableModel.getValueAt(row, 0));
-
-        String input = UiSafe.showInputDialog(this, "Enter new value for '" + key + "':", "Edit Configuration: " + key, JOptionPane.PLAIN_MESSAGE);
-        if (input != null && !input.trim().isEmpty()) {
+        applyBtn.setOnAction(e -> {
+            String k = selectedKeyField.getText();
+            String v = newValueField.getText();
+            if (k == null || k.isBlank() || v == null) return;
             try {
-                configManager.setConfig(adminUsername, key, input.trim());
-                UiSafe.showMessageDialog(this, "Updated '" + key + "' successfully.", "Configuration Updated", JOptionPane.INFORMATION_MESSAGE);
-                refreshData();
-            } catch (Exception ex) {
-                UiSafe.showMessageDialog(this, "Validation Error: " + ex.getMessage(), "Invalid Configuration", JOptionPane.ERROR_MESSAGE);
+                configManager.setConfig(adminUsername, k.trim(), v.trim());
+                refresh();
+                feedbackLabel.setText("Saved '" + k.trim() + "' = '" + v.trim() + "' cleanly.");
+            } catch (IllegalArgumentException ex) {
+                UiSafe.showError(UiSafe.windowOf(this), "Validation Rejected", ex.getMessage());
             }
-        }
+        });
+
+        feedbackLabel.getStyleClass().add("muted-label");
+        editorRow.getChildren().addAll(selectedKeyField, newValueField, applyBtn);
+
+        VBox card = new VBox(12, table, editorRow, feedbackLabel);
+        card.getStyleClass().add("card");
+        VBox.setVgrow(card, Priority.ALWAYS);
+
+        getChildren().addAll(header, card);
     }
 
-    private void resetDefaults() {
-        int confirm = UiSafe.showConfirmDialog(this,
-                "Reset all configuration parameters to standard production defaults?",
-                "Confirm Reset", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
-        if (confirm == JOptionPane.YES_OPTION) {
-            configManager.resetToDefaults(adminUsername);
-            UiSafe.showMessageDialog(this, "Configurations reset to production defaults.", "Reset Complete", JOptionPane.INFORMATION_MESSAGE);
-            refreshData();
-        }
+    public void refresh() {
+        Map<String, String> all = configManager.getAllConfigs();
+        table.getItems().setAll(all.entrySet().stream()
+                .map(e -> new ConfigEntryRow(e.getKey(), e.getValue(), describeConstraint(e.getKey())))
+                .toList());
     }
 
-    private void startServer() {
-        if (serverManager == null) return;
-        SwingWorker<Void, Void> worker = new SwingWorker<>() {
-            @Override
-            protected Void doInBackground() throws Exception {
-                serverManager.startServer(8443);
-                return null;
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    get();
-                    refreshData();
-                } catch (Exception e) {
-                    UiSafe.showMessageDialog(ConfigPanel.this, "Failed to start server: " + e.getMessage(), "Server Error", JOptionPane.ERROR_MESSAGE);
-                }
-            }
+    private static String describeConstraint(String key) {
+        return switch (key) {
+            case "server.port" -> "Integer port in range 1 - 65535";
+            case "session.timeoutMinutes" -> "Integer idle timeout 1 - 10080 minutes";
+            case "tunnel.mode" -> "SPLIT or FULL";
+            case "bandwidth.defaultKbpsPerUser" -> "Integer >= 64 Kbps";
+            case "dns.leakProtection", "compression.enabled", "siteToSite.enabled" -> "Boolean: true or false";
+            default -> "Allowlisted runtime setting";
         };
-        worker.execute();
-    }
-
-    private void stopServer() {
-        if (serverManager == null) return;
-        serverManager.stopServer();
-        refreshData();
-    }
-
-    private void restartServer() {
-        if (serverManager == null) return;
-        SwingWorker<Void, Void> worker = new SwingWorker<>() {
-            @Override
-            protected Void doInBackground() throws Exception {
-                serverManager.restartServer(8443);
-                return null;
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    get();
-                    refreshData();
-                } catch (Exception e) {
-                    UiSafe.showMessageDialog(ConfigPanel.this, "Failed to restart server: " + e.getMessage(), "Server Error", JOptionPane.ERROR_MESSAGE);
-                }
-            }
-        };
-        worker.execute();
     }
 }
-

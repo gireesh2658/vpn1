@@ -67,8 +67,14 @@ public final class ConfigUtil {
         PROPERTIES.setProperty("server.maxClients", "50");
         PROPERTIES.setProperty("session.timeoutMinutes", "30");
         PROPERTIES.setProperty("session.absoluteTimeoutMinutes", "480");
-        PROPERTIES.setProperty("db.path", "office_vpn.db");
-        PROPERTIES.setProperty("device.maxPerUser", "2");
+        PROPERTIES.setProperty("db.host", "127.0.0.1");
+        PROPERTIES.setProperty("db.port", "3306");
+        PROPERTIES.setProperty("db.name", "office_vpn");
+        PROPERTIES.setProperty("db.user", "root");
+        PROPERTIES.setProperty("db.password", "");
+        PROPERTIES.setProperty("db.pool.maxSize", "12");
+        PROPERTIES.setProperty("db.url", "");
+        PROPERTIES.setProperty("device.maxPerUser", "3");
 
         // Tunneling
         PROPERTIES.setProperty("tunnel.mode", "SPLIT");
@@ -148,8 +154,57 @@ public final class ConfigUtil {
         return getInt("server.port", 8443);
     }
 
-    public static String getDbPath() {
-        return getString("db.path", "office_vpn.db");
+    public static String getDbHost() {
+        return getConfigOverride("officevpn.db.host", "OFFICEVPN_DB_HOST", "db.host", "127.0.0.1");
+    }
+
+    public static int getDbPort() {
+        String raw = getConfigOverride("officevpn.db.port", "OFFICEVPN_DB_PORT", "db.port", "3306");
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            return 3306;
+        }
+    }
+
+    public static String getDbName() {
+        return getConfigOverride("officevpn.db.name", "OFFICEVPN_DB_NAME", "db.name", "office_vpn");
+    }
+
+    public static String getDbUser() {
+        return getConfigOverride("officevpn.db.user", "OFFICEVPN_DB_USER", "db.user", "root");
+    }
+
+    public static String getDbPassword() {
+        return getConfigOverride("officevpn.db.password", "OFFICEVPN_DB_PASS", "db.password", "");
+    }
+
+    public static int getDbPoolMaxSize() {
+        int val = getInt("db.pool.maxSize", 12);
+        return Math.max(2, Math.min(val, 64));
+    }
+
+    public static String getDbUrl() {
+        String explicit = getConfigOverride("officevpn.db.url", "OFFICEVPN_DB_URL", "db.url", "");
+        if (explicit != null && !explicit.isBlank()) {
+            return explicit.trim();
+        }
+        return String.format(
+                "jdbc:mysql://%s:%d/%s?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&useUnicode=true&characterEncoding=UTF-8",
+                getDbHost(), getDbPort(), getDbName()
+        );
+    }
+
+    private static String getConfigOverride(String sysProp, String envVar, String configKey, String fallback) {
+        String prop = System.getProperty(sysProp);
+        if (prop != null && !prop.isBlank()) {
+            return prop.trim();
+        }
+        String env = System.getenv(envVar);
+        if (env != null && !env.isBlank()) {
+            return env.trim();
+        }
+        return getString(configKey, fallback);
     }
 
     public static int getMaxClients() {
@@ -169,7 +224,7 @@ public final class ConfigUtil {
     }
 
     public static int getMaxDevicesPerUser() {
-        return getInt("device.maxPerUser", 2);
+        return getInt("device.maxPerUser", 3);
     }
 
     public static String getJavaVersion() {

@@ -1,353 +1,233 @@
 package com.officevpn.gui.admin;
 
+import com.officevpn.admin.AlertManager;
+import com.officevpn.admin.AuditService;
 import com.officevpn.db.DatabaseManager;
+import com.officevpn.gui.UiSafe;
 import com.officevpn.model.AuditVerifyResult;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.TableView;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
+import javafx.stage.FileChooser;
 
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JComboBox;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTable;
-import javax.swing.ListSelectionModel;
-import javax.swing.SwingUtilities;
-import javax.swing.SwingWorker;
-import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.table.DefaultTableModel;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.io.File;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
- * Immutable Security Audit Log Panel for the Headquarters Admin Dashboard.
- * <p>
- * Displays persistent security audit events (authenticated tunnels, RBAC
- * denials,
- * identity spoofing alerts, and password failures) stored in SQLite with
- * cryptographic HMAC chain verification.
+ * JavaFX Tamper-Evident Cryptographic Audit Log Viewer, Search, CSV Exporter &amp; HMAC Verifier.
  */
-public final class AuditLogPanel extends JPanel {
+public final class AuditLogPanel extends VBox {
 
-    private static final long serialVersionUID = 1L;
+    private static final DateTimeFormatter TS_FMT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
-    private transient DatabaseManager databaseManager;
-    private final DefaultTableModel tableModel;
-    private final JTable auditTable;
-    private final JComboBox<String> filterCombo;
-    private final JButton refreshButton = new JButton("Refresh Audit Logs");
-    private final JButton verifyButton = new JButton("Verify Integrity");
-    private final JButton copyAnchorButton = new JButton("Copy anchor");
-    private final JLabel integrityLabel = new JLabel("Integrity: Not Checked");
-    private final JLabel countLabel = new JLabel("Entries Displayed: 0");
+    private final DatabaseManager db;
+    private final AuditService auditService;
 
-    private final SimpleDateFormat timeFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    private final TextField usernameFilter = new TextField();
+    private final ComboBox<String> eventFilter = new ComboBox<>();
+    private final Label integrityBadge = new Label("Chain Status: Pending");
+    private final Label countPill = new Label("0 Events");
+    private final Label detailPreview = new Label("Select an audit record to inspect full details.");
+    private final TableView<DatabaseManager.AuditLogEntry> table = new TableView<>();
 
-    public AuditLogPanel(DatabaseManager databaseManager) {
-        this(databaseManager, System::currentTimeMillis);
+    public AuditLogPanel(DatabaseManager db, AlertManager alertManager) {
+        this.db = db;
+        this.auditService = new AuditService(db, alertManager);
+        setSpacing(14);
+        setPadding(new Insets(18));
+        buildUi();
+        refresh();
     }
 
-    public AuditLogPanel(DatabaseManager databaseManager, java.util.function.LongSupplier timeSupplier) {
-        this.databaseManager = databaseManager;
-        this.timeSupplier = (timeSupplier != null) ? timeSupplier : System::currentTimeMillis;
+    private void buildUi() {
+        HBox header = new HBox(10);
+        header.setAlignment(Pos.CENTER_LEFT);
+        VBox titleBox = new VBox(2);
+        Label title = new Label("Security Audit Trail (HMAC-SHA256 Chained)");
+        title.getStyleClass().add("page-title");
+        Label subtitle = new Label("Append-only MySQL security events protected by forward-linked cryptographic integrity proofs");
+        subtitle.getStyleClass().add("page-subtitle");
+        titleBox.getChildren().addAll(title, subtitle);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        integrityBadge.getStyleClass().addAll("pill", "pill-muted");
+        countPill.getStyleClass().addAll("pill", "pill-info");
+        header.getChildren().addAll(titleBox, spacer, integrityBadge, countPill);
 
-        setLayout(new BorderLayout(8, 8));
-        setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        HBox toolbar = new HBox(10);
+        toolbar.setAlignment(Pos.CENTER_LEFT);
+        usernameFilter.setPromptText("Username filter...");
+        usernameFilter.setPrefWidth(175);
 
-        // Top Filter Bar
-        JPanel topBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
-        topBar.setBorder(BorderFactory.createTitledBorder("Audit Filter & Chain Verification"));
+        eventFilter.setEditable(true);
+        eventFilter.getItems().addAll(
+                "ALL EVENTS", "AUTH_SUCCESS", "AUTH_FAILURE", "AUTH_TOTP_FAILED",
+                "AUTH_LOCKOUT_BLOCKED", "AUTH_USERNAME_UNDER_ATTACK", "TUNNEL_ESTABLISHED",
+                "FILE_UPLOAD", "FILE_DOWNLOAD", "FILE_ACCESS_DENIED",
+                "ADMIN_USER_CREATED", "ADMIN_PASSWORD_RESET", "ADMIN_ROLE_CHANGED",
+                "ADMIN_DEPARTMENT_CHANGED", "ADMIN_USER_STATUS_CHANGED", "ADMIN_UNLOCK_ACCOUNT",
+                "DEVICE_ENROLLED", "DEVICE_CAP_EXCEEDED", "CONFIG_CHANGED", "AUDIT_CHAIN_GENESIS"
+        );
+        eventFilter.getSelectionModel().selectFirst();
+        eventFilter.setPrefWidth(220);
 
-        topBar.add(new JLabel("Filter:"));
-        filterCombo = new JComboBox<>(new String[] {
-                "ALL EVENTS",
-                "TUNNEL_ESTABLISHED",
-                "TUNNEL_TERMINATED",
-                "AUTH_SUCCESS",
-                "AUTH_FAILURE",
-                "RBAC_VIOLATION",
-                "SECURITY_ALERT",
-                "USER_STATUS_CHANGE"
-        });
-        filterCombo.addActionListener(e -> loadAuditLogs());
-        topBar.add(filterCombo);
+        Button searchBtn = new Button("Search");
+        searchBtn.getStyleClass().add("btn-primary");
+        searchBtn.setOnAction(e -> refresh());
 
-        topBar.add(refreshButton);
-        refreshButton.addActionListener(e -> loadAuditLogs());
-
-        topBar.add(verifyButton);
-        verifyButton.addActionListener(e -> verifyChainIntegrity());
-
-        JButton exportCsvButton = new JButton("Export CSV");
-        exportCsvButton.addActionListener(e -> exportAuditLogsToCsv());
-        topBar.add(exportCsvButton);
-
-        topBar.add(copyAnchorButton);
-        copyAnchorButton.addActionListener(e -> {
-            if (databaseManager != null) {
-                String anchor = databaseManager.currentAnchor();
-                if (anchor != null && !anchor.isEmpty()) {
-                    java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
-                            .setContents(new java.awt.datatransfer.StringSelection(anchor), null);
-                    JOptionPane.showMessageDialog(this, "Audit anchor copied to clipboard:\n" + anchor, "Anchor Copied",
-                            JOptionPane.INFORMATION_MESSAGE);
-                } else {
-                    JOptionPane.showMessageDialog(this, "No audit anchor available to copy.", "Anchor Not Available",
-                            JOptionPane.WARNING_MESSAGE);
-                }
-            }
+        Button clearBtn = new Button("Reset");
+        clearBtn.getStyleClass().add("btn-secondary");
+        clearBtn.setOnAction(e -> {
+            usernameFilter.clear();
+            eventFilter.getSelectionModel().selectFirst();
+            refresh();
         });
 
-        integrityLabel.setFont(integrityLabel.getFont().deriveFont(Font.BOLD));
-        topBar.add(integrityLabel);
+        Button verifyBtn = new Button("Verify Hash Chain");
+        verifyBtn.getStyleClass().add("btn-success");
+        verifyBtn.setOnAction(e -> runChainVerify());
 
-        add(topBar, BorderLayout.NORTH);
+        Button exportCsvBtn = new Button("Export CSV...");
+        exportCsvBtn.getStyleClass().add("btn-secondary");
+        exportCsvBtn.setOnAction(e -> handleExportCsv());
 
-        // Center Table
-        String[] columnNames = {
-                "Seq", "Timestamp", "Event Type", "Username", "Dept", "Actor", "Remote IP", "Details"
-        };
+        Region tbSpacer = new Region();
+        HBox.setHgrow(tbSpacer, Priority.ALWAYS);
+        toolbar.getChildren().addAll(usernameFilter, eventFilter, searchBtn, clearBtn, tbSpacer, verifyBtn, exportCsvBtn);
 
-        tableModel = new DefaultTableModel(columnNames, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
+        UiSafe.configureSafeTable(table);
+        table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("Seq", e -> String.valueOf(e.seq()), 58), 48, 65));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("Timestamp", e -> TS_FMT.format(Instant.ofEpochMilli(e.timestamp())), 152), 148, 0));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.badgeColumn("Event Type", DatabaseManager.AuditLogEntry::eventType,
+                AuditLogPanel::badgeForEvent, 215), 195, 0));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("Username", DatabaseManager.AuditLogEntry::username, 120), 105, 0));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("Dept", DatabaseManager.AuditLogEntry::department, 125), 115, 0));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("Actor", e -> e.actor() != null ? e.actor() : "-", 105), 95, 0));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("Remote IP", DatabaseManager.AuditLogEntry::ipAddress, 105), 95, 0));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("Details", DatabaseManager.AuditLogEntry::details, 280), 220, 0));
+        VBox.setVgrow(table, Priority.ALWAYS);
+
+        table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> {
+            if (sel == null) {
+                detailPreview.setText("Select an audit record to inspect full details.");
+            } else {
+                detailPreview.setText(String.format("Seq #%d | %s | User=%s (%s) | Actor=%s | IP=%s | %s",
+                        sel.seq(), sel.eventType(), sel.username(), sel.department(),
+                        sel.actor(), sel.ipAddress(), UiSafe.text(sel.details(), 512)));
             }
-        };
+        });
 
-        auditTable = new JTable(tableModel);
-        com.officevpn.gui.UiSafe.configureSafeTable(auditTable);
-        auditTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        auditTable.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        auditTable.setRowHeight(22);
+        detailPreview.getStyleClass().addAll("muted-label", "mono-text");
+        detailPreview.setWrapText(true);
 
-        // Custom renderer for Event Type (Security alerts colored red, auth green),
-        // wrapped for UI safety
-        DefaultTableCellRenderer eventTypeRenderer = new DefaultTableCellRenderer() {
-            @Override
-            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
-                    boolean hasFocus, int row, int column) {
-                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-                String event = String.valueOf(value);
-                if (event.contains("ALERT") || event.contains("VIOLATION") || event.contains("FAILURE")) {
-                    c.setForeground(new Color(180, 0, 0));
-                    c.setFont(c.getFont().deriveFont(Font.BOLD));
-                } else if (event.contains("ESTABLISHED") || event.contains("SUCCESS")) {
-                    c.setForeground(new Color(0, 130, 0));
-                    c.setFont(c.getFont().deriveFont(Font.BOLD));
-                } else {
-                    c.setForeground(Color.BLACK);
-                }
-                return c;
+        VBox card = new VBox(12, toolbar, table, detailPreview);
+        card.getStyleClass().add("card");
+        VBox.setVgrow(card, Priority.ALWAYS);
+
+        getChildren().addAll(header, card);
+    }
+
+    public void updateStartupVerifyResult(AuditVerifyResult result) {
+        if (result == null) return;
+        applyVerifyBadge(result);
+    }
+
+    private void runChainVerify() {
+        integrityBadge.setText("Verifying...");
+        CompletableFuture.supplyAsync(db::verifyAuditChain).thenAccept(res -> Platform.runLater(() -> {
+            applyVerifyBadge(res);
+            if (res.status() == AuditVerifyResult.AuditStatus.OK) {
+                UiSafe.showInfo(UiSafe.windowOf(this), "Audit Integrity Verified", res.details());
+            } else {
+                UiSafe.showError(UiSafe.windowOf(this), "AUDIT INTEGRITY ALERT",
+                        "Status: " + res.status() + "\nFirst bad seq: " + res.firstBadSeq() + "\n" + res.details());
             }
-        };
-        // Wrapped for UI safety
-        auditTable.getColumnModel().getColumn(2).setCellRenderer(com.officevpn.gui.UiSafe.wrap(eventTypeRenderer));
-
-        auditTable.getColumnModel().getColumn(0).setPreferredWidth(50);
-        auditTable.getColumnModel().getColumn(1).setPreferredWidth(130);
-        auditTable.getColumnModel().getColumn(2).setPreferredWidth(150);
-        auditTable.getColumnModel().getColumn(3).setPreferredWidth(90);
-        auditTable.getColumnModel().getColumn(4).setPreferredWidth(70);
-        auditTable.getColumnModel().getColumn(5).setPreferredWidth(90);
-        auditTable.getColumnModel().getColumn(6).setPreferredWidth(100);
-        auditTable.getColumnModel().getColumn(7).setPreferredWidth(300);
-        com.officevpn.gui.UiSafe.disableHtml(integrityLabel);
-        com.officevpn.gui.UiSafe.disableHtml(countLabel);
-
-        add(new JScrollPane(auditTable), BorderLayout.CENTER);
-
-        // Bottom status
-        JPanel bottomBar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        bottomBar.add(countLabel);
-        add(bottomBar, BorderLayout.SOUTH);
-
-        this.drainTimer = new javax.swing.Timer(250, e -> drainAuditQueue(MAX_DRAIN_PER_TICK));
-        this.drainTimer.start();
-
-        loadAuditLogs();
-    }
-
-    public void verifyChainIntegrity() {
-        if (databaseManager == null)
-            return;
-        verifyButton.setEnabled(false);
-        integrityLabel.setText("Integrity: Verifying...");
-        integrityLabel.setForeground(Color.BLACK);
-
-        new SwingWorker<AuditVerifyResult, Void>() {
-            @Override
-            protected AuditVerifyResult doInBackground() {
-                return databaseManager.verifyAuditChain();
-            }
-
-            @Override
-            protected void done() {
-                verifyButton.setEnabled(true);
-                try {
-                    AuditVerifyResult result = get();
-                    if (result.status() == AuditVerifyResult.AuditStatus.OK) {
-                        integrityLabel.setText("Integrity: VERIFIED (" + result.checkedRows() + " rows)");
-                        integrityLabel.setForeground(new Color(0, 130, 0));
-                    } else if (result.status() == AuditVerifyResult.AuditStatus.KEY_MISSING) {
-                        integrityLabel.setText("Integrity: UNVERIFIABLE (key missing)");
-                        integrityLabel.setForeground(Color.ORANGE);
-                    } else {
-                        integrityLabel.setText(
-                                "Integrity: BROKEN at seq " + result.brokenSeq() + " (" + result.status() + ")");
-                        integrityLabel.setForeground(Color.RED);
-                    }
-                } catch (Exception ex) {
-                    integrityLabel.setText("Integrity: ERROR (" + ex.getMessage() + ")");
-                    integrityLabel.setForeground(Color.RED);
-                }
-            }
-        }.execute();
-    }
-
-    public void exportAuditLogsToCsv() {
-        if (databaseManager == null) return;
-        new SwingWorker<Integer, Void>() {
-            private java.nio.file.Path path;
-
-            @Override
-            protected Integer doInBackground() throws Exception {
-                path = java.nio.file.Path.of("audit_logs_export.csv");
-                com.officevpn.admin.AuditService svc = new com.officevpn.admin.AuditService(databaseManager);
-                return svc.exportAuditToCsv(path);
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    int count = get();
-                    JOptionPane.showMessageDialog(AuditLogPanel.this,
-                            "Successfully exported " + count + " audit entries to:\n" + path.toAbsolutePath(),
-                            "Export Audit Complete", JOptionPane.INFORMATION_MESSAGE);
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(AuditLogPanel.this,
-                            "Export failed: " + ex.getMessage(),
-                            "Export Error", JOptionPane.ERROR_MESSAGE);
-                }
-            }
-        }.execute();
-    }
-
-    public void setDatabaseManager(DatabaseManager databaseManager) {
-        this.databaseManager = databaseManager;
-        loadAuditLogs();
-    }
-
-    public static final int MAX_DRAIN_PER_TICK = 200;
-    public static final int MAX_ROWS = 500;
-
-    private final transient java.util.Queue<Object[]> auditQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
-    private final javax.swing.Timer drainTimer;
-
-    private final java.util.concurrent.atomic.AtomicLong lastAuditLoadTime = new java.util.concurrent.atomic.AtomicLong(
-            0);
-    private transient java.util.function.LongSupplier timeSupplier = System::currentTimeMillis;
-    private final java.util.concurrent.atomic.AtomicInteger reloadCount = new java.util.concurrent.atomic.AtomicInteger(
-            0);
-    private final java.util.concurrent.atomic.AtomicBoolean queryRanOffEdt = new java.util.concurrent.atomic.AtomicBoolean(
-            false);
-    private transient Runnable beforeQueryHook = null;
-
-    // Test seam
-    public int getReloadCount() {
-        return reloadCount.get();
-    }
-
-    // Test seam
-    public boolean isQueryRanOffEdt() {
-        return queryRanOffEdt.get();
-    }
-
-    // Test seam
-    public void setBeforeQueryHook(Runnable hook) {
-        this.beforeQueryHook = hook;
-    }
-
-    // Test seam
-    public java.util.Queue<Object[]> getAuditQueue() {
-        return auditQueue;
-    }
-
-    // Test seam
-    public JTable getAuditTable() {
-        return auditTable;
-    }
-
-    public int drainAuditQueue(int maxDrain) {
-        int drained = 0;
-        while (drained < maxDrain && !auditQueue.isEmpty()) {
-            Object[] row = auditQueue.poll();
-            if (row != null) {
-                tableModel.addRow(row);
-                drained++;
-            }
-        }
-        if (tableModel.getRowCount() > MAX_ROWS) {
-            int excess = tableModel.getRowCount() - MAX_ROWS;
-            for (int i = 0; i < excess; i++) {
-                tableModel.removeRow(0);
-            }
-        }
-        return drained;
-    }
-
-    public void loadAuditLogs() {
-        loadAuditLogs(false);
-    }
-
-    public void loadAuditLogs(boolean force) {
-        if (databaseManager == null)
-            return;
-        long now = timeSupplier.getAsLong();
-        if (!force && (now - lastAuditLoadTime.get() < 2000)) {
-            return; // Debounced to max once per 2 seconds
-        }
-        lastAuditLoadTime.set(now);
-        reloadCount.incrementAndGet();
-
-        String selectedFilter = (String) filterCombo.getSelectedItem();
-
-        java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-            queryRanOffEdt.set(!SwingUtilities.isEventDispatchThread());
-            if (beforeQueryHook != null) {
-                beforeQueryHook.run();
-            }
-            return databaseManager.getRecentAuditLogs(200);
-        }).thenAccept(logs -> SwingUtilities.invokeLater(() -> {
-            tableModel.setRowCount(0);
-            auditQueue.clear();
-            for (DatabaseManager.AuditLogEntry entry : logs) {
-                if (selectedFilter != null && !"ALL EVENTS".equals(selectedFilter)) {
-                    if (!selectedFilter.equalsIgnoreCase(entry.eventType())) {
-                        continue;
-                    }
-                }
-                auditQueue.offer(new Object[] {
-                        entry.seq() > 0 ? entry.seq() : entry.id(),
-                        com.officevpn.gui.UiSafe.text(timeFormat.format(new Date(entry.timestamp())), 32),
-                        com.officevpn.gui.UiSafe.text(entry.eventType(), 32),
-                        com.officevpn.gui.UiSafe.text(entry.username(), 32),
-                        com.officevpn.gui.UiSafe.text(entry.department(), 32),
-                        com.officevpn.gui.UiSafe.text(entry.actor() != null ? entry.actor() : "-", 32),
-                        com.officevpn.gui.UiSafe.text(entry.remoteIp() != null ? entry.remoteIp() : entry.ipAddress(),
-                                32),
-                        com.officevpn.gui.UiSafe.text(entry.details(), 256)
-                });
-            }
-            drainAuditQueue(MAX_DRAIN_PER_TICK);
-            countLabel.setText("Entries Displayed: " + tableModel.getRowCount() + " (Filtered from " + logs.size()
-                    + " total recent events)");
         }));
     }
-}
 
+    private void applyVerifyBadge(AuditVerifyResult res) {
+        integrityBadge.getStyleClass().removeAll("pill-success", "pill-danger", "pill-warning", "pill-muted");
+        if (res.status() == AuditVerifyResult.AuditStatus.OK) {
+            integrityBadge.setText("CHAIN INTACT (" + res.rowsChecked() + " rows)");
+            integrityBadge.getStyleClass().add("pill-success");
+        } else {
+            integrityBadge.setText("CHAIN ALERT: " + res.status());
+            integrityBadge.getStyleClass().add("pill-danger");
+        }
+    }
+
+    private void handleExportCsv() {
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Export Audit Trail to CSV");
+        fc.setInitialFileName("officevpn-audit-trail.csv");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV Files", "*.csv"));
+        File file = fc.showSaveDialog(UiSafe.windowOf(this));
+        if (file == null) return;
+
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                return auditService.exportAuditToCsv(file.toPath());
+            } catch (Exception ex) {
+                throw new IllegalStateException(ex.getMessage(), ex);
+            }
+        }).whenComplete((count, err) -> Platform.runLater(() -> {
+            if (err != null) {
+                UiSafe.showError(UiSafe.windowOf(this), "Export Failed", err.getMessage());
+            } else {
+                UiSafe.showInfo(UiSafe.windowOf(this), "CSV Export Complete",
+                        "Exported " + count + " audit rows to:\n" + file.getAbsolutePath());
+            }
+        }));
+    }
+
+    public void refresh() {
+        String userQ = usernameFilter.getText() != null ? usernameFilter.getText().trim() : "";
+        String evRaw = eventFilter.getEditor() != null && eventFilter.getEditor().getText() != null
+                ? eventFilter.getEditor().getText().trim()
+                : (eventFilter.getValue() != null ? eventFilter.getValue().trim() : "");
+        String evQ = ("ALL EVENTS".equalsIgnoreCase(evRaw) || evRaw.isEmpty()) ? null : evRaw;
+
+        CompletableFuture.supplyAsync(() -> {
+            if (userQ.isEmpty() && evQ == null) {
+                return db.getRecentAuditLogs(400);
+            }
+            List<DatabaseManager.AuditLogEntry> found = auditService.searchAudit(
+                    userQ.isEmpty() ? null : userQ, evQ, null, null);
+            return found.size() > 500 ? found.subList(0, 500) : found;
+        }).thenAccept(list -> Platform.runLater(() -> {
+            table.getItems().setAll(list);
+            countPill.setText(list.size() + " Events");
+        }));
+    }
+
+    private static String badgeForEvent(DatabaseManager.AuditLogEntry e) {
+        String ev = e.eventType() != null ? e.eventType() : "";
+        if (ev.contains("FAILURE") || ev.contains("FAILED") || ev.contains("DENIED")
+                || ev.contains("ATTACK") || ev.contains("LOCKOUT") || ev.contains("CORRUPT")
+                || ev.contains("EXCEEDED") || ev.contains("DELETED")) {
+            return "pill-danger";
+        }
+        if (ev.contains("DISABLED") || ev.contains("REVOKED") || ev.contains("RESET") || ev.contains("CONFIG")) {
+            return "pill-warning";
+        }
+        if (ev.contains("SUCCESS") || ev.contains("ESTABLISHED") || ev.contains("CREATED")
+                || ev.contains("ENROLLED") || ev.contains("GENESIS")) {
+            return "pill-success";
+        }
+        return "pill-info";
+    }
+}

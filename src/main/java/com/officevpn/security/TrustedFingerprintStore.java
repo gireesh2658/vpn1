@@ -144,6 +144,14 @@ public final class TrustedFingerprintStore {
         save();
     }
 
+    public synchronized boolean removePin(String host, int port) {
+        if (properties.remove(buildKey(host, port)) != null) {
+            save();
+            return true;
+        }
+        return false;
+    }
+
 
     private static void applyOwnerOnlyPermissions(Path file) {
         Set<String> views = FileSystems.getDefault().supportedFileAttributeViews();

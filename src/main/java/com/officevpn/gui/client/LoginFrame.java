@@ -1,288 +1,316 @@
 package com.officevpn.gui.client;
 
 import com.officevpn.client.VpnClientEngine;
+import com.officevpn.config.ConfigUtil;
 import com.officevpn.gui.UiSafe;
 import com.officevpn.security.TrustedFingerprintStore;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.PasswordField;
+import javafx.scene.control.ProgressBar;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
+import javafx.stage.Stage;
 
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JCheckBox;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JPasswordField;
-import javax.swing.JProgressBar;
-import javax.swing.JTextField;
-import javax.swing.SwingWorker;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
-import java.util.Arrays;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 /**
- * Secure Employee VPN Login &amp; Handshake Authentication Window.
- * <p>
- * Implements strict security controls and memory hygiene:
- * <ul>
- *   <li><b>Explicit Server Key Enrollment:</b> Eliminates silent TOFU risk by requiring explicit user
- *       verification when connecting to unpinned gateways.</li>
- *   <li><b>Rogue Gateway &amp; MITM Defense:</b> Cross-checks observed public keys against
- *       {@link TrustedFingerprintStore} and blocks altered keys immediately.</li>
- *   <li><b>Zero Plaintext Retention:</b> Password buffers are wiped immediately with zeros.</li>
- * </ul>
+ * JavaFX Encrypted VPN Client Login, TOFU Pinning &amp; 2FA Authentication Window.
  */
-public final class LoginFrame extends JFrame {
+public final class LoginFrame {
 
-    private static final long serialVersionUID = 1L;
+    private final Stage stage;
+    private final TrustedFingerprintStore fingerprintStore;
 
-    private final JTextField hostField = new JTextField("127.0.0.1", 16);
-    private final JTextField portField = new JTextField("8443", 6);
-    private final JTextField fingerprintField = new JTextField("", 32);
-    private final JCheckBox replacePinCheckBox = new JCheckBox("Replace stored pin");
-    private final JTextField usernameField = new JTextField("", 16);
-    private final JPasswordField passwordField = new JPasswordField("", 16);
+    private final TextField hostField = new TextField("127.0.0.1");
+    private final TextField portField = new TextField(String.valueOf(ConfigUtil.getPort()));
+    private final TextField expectedFpField = new TextField();
+    private final TextField usernameField = new TextField();
+    private final PasswordField passwordField = new PasswordField();
+    private final TextField totpField = new TextField();
 
-    private final JButton connectButton = new JButton("Connect to VPN Gateway");
-    private final JProgressBar progressBar = new JProgressBar();
-    private final JLabel statusLabel = new JLabel("Enter credentials and server information to establish encrypted tunnel.");
+    private final Label pinStatusLabel = new Label("");
+    private final Label errorLabel = new Label("");
+    private final ProgressBar progressBar = new ProgressBar(0);
+    private final Button connectBtn = new Button("Connect & Establish Encrypted Tunnel");
+    private final Button clearPinBtn = new Button("Clear Pin");
 
-    public LoginFrame() {
-        super("Office VPN Client - Secure Employee Gateway Login");
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(620, 480);
-        setLocationRelativeTo(null);
-        setResizable(false);
+    public LoginFrame(Stage stage) {
+        this(stage, TrustedFingerprintStore.getDefault());
+    }
 
-        JPanel mainPanel = new JPanel(new BorderLayout(15, 15));
-        mainPanel.setBorder(BorderFactory.createEmptyBorder(20, 25, 20, 25));
+    public LoginFrame(Stage stage, TrustedFingerprintStore fingerprintStore) {
+        this.stage = stage;
+        this.fingerprintStore = (fingerprintStore != null) ? fingerprintStore : TrustedFingerprintStore.getDefault();
+        buildScene();
+        refreshStoredPinIndicator();
+    }
 
-        // Header Title
-        JPanel titlePanel = new JPanel(new BorderLayout(5, 5));
-        JLabel titleLabel = new JLabel("Office VPN Remote Client");
-        titleLabel.setFont(new Font("SansSerif", Font.BOLD, 20));
-        titleLabel.setForeground(new Color(25, 75, 150));
+    public void show() {
+        stage.show();
+        stage.toFront();
+    }
 
-        JLabel subtitleLabel = new JLabel("<html>Application-Level Encrypted Tunnel &amp; Departmental Intranet Access<br>" +
-                "Dual-Layer AES-256-GCM + HKDF-SHA256 + RSA-2048 Cryptographic Handshake<br>" +
-                "<font color='#0066aa'>DNS Leak Protected (10.8.0.1) | Kill Switch ARMED | Split/Full Tunneling</font></html>");
-        subtitleLabel.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        subtitleLabel.setForeground(Color.DARK_GRAY);
+    private void buildScene() {
+        VBox root = new VBox(14);
+        root.getStyleClass().add("app-root");
+        root.setPadding(new Insets(24));
+        root.setPrefWidth(520);
 
-        titlePanel.add(titleLabel, BorderLayout.NORTH);
-        titlePanel.add(subtitleLabel, BorderLayout.CENTER);
-        mainPanel.add(titlePanel, BorderLayout.NORTH);
+        VBox headerBox = new VBox(4);
+        Label title = new Label("Office VPN Secure Client");
+        title.getStyleClass().add("page-title");
+        Label subtitle = new Label("OFFICE-VPN-2.0 Hybrid ECDH PFS · RSASSA-PSS TOFU · AES-256-GCM Tunnel");
+        subtitle.getStyleClass().add("page-subtitle");
+        headerBox.getChildren().addAll(title, subtitle);
 
-        // Center Form Panel
-        JPanel formPanel = new JPanel(new GridBagLayout());
-        formPanel.setBorder(BorderFactory.createTitledBorder("Gateway Connection & Authentication Parameters"));
+        GridPane netGrid = new GridPane();
+        netGrid.setHgap(12);
+        netGrid.setVgap(8);
+        ColumnConstraints c0 = new ColumnConstraints();
+        c0.setPercentWidth(70);
+        ColumnConstraints c1 = new ColumnConstraints();
+        c1.setPercentWidth(30);
+        netGrid.getColumnConstraints().addAll(c0, c1);
 
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(6, 10, 6, 10);
-        gbc.anchor = GridBagConstraints.WEST;
+        hostField.setPromptText("Gateway host or IP");
+        portField.setPromptText("8443");
+        hostField.textProperty().addListener((obs, o, n) -> refreshStoredPinIndicator());
+        portField.textProperty().addListener((obs, o, n) -> refreshStoredPinIndicator());
 
-        // Host & Port
-        gbc.gridx = 0; gbc.gridy = 0;
-        formPanel.add(new JLabel("Gateway Server Host:"), gbc);
-        gbc.gridx = 1;
-        JPanel hostPortPanel = new JPanel(new BorderLayout(5, 0));
-        hostPortPanel.add(hostField, BorderLayout.CENTER);
-        JPanel pPanel = new JPanel(new BorderLayout(2, 0));
-        pPanel.add(new JLabel("Port:"), BorderLayout.WEST);
-        pPanel.add(portField, BorderLayout.EAST);
-        hostPortPanel.add(pPanel, BorderLayout.EAST);
-        formPanel.add(hostPortPanel, gbc);
+        netGrid.add(new Label("Gateway Host"), 0, 0);
+        netGrid.add(new Label("Port"), 1, 0);
+        netGrid.add(hostField, 0, 1);
+        netGrid.add(portField, 1, 1);
 
-        // Pinned Public Key Fingerprint
-        gbc.gridx = 0; gbc.gridy = 1;
-        formPanel.add(new JLabel("Pinned Key SHA-256:"), gbc);
-        gbc.gridx = 1;
-        fingerprintField.setToolTipText("64-character SHA-256 Hex Fingerprint provisioned by Headquarters Admin. Leave blank for interactive first-time enrollment.");
-        formPanel.add(fingerprintField, gbc);
+        expectedFpField.setPromptText("Optional expected SHA-256 hex fingerprint for strict first-use pinning");
+        expectedFpField.getStyleClass().add("mono-text");
 
-        gbc.gridx = 1; gbc.gridy = 2;
-        JPanel fpSubPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        fpSubPanel.setOpaque(false);
-        fpSubPanel.add(replacePinCheckBox);
-        formPanel.add(fpSubPanel, gbc);
+        pinStatusLabel.getStyleClass().add("muted-label");
+        clearPinBtn.getStyleClass().add("btn-secondary");
+        clearPinBtn.setOnAction(e -> {
+            String host = safeHost();
+            int port = safePort();
+            if (port > 0) {
+                fingerprintStore.removePin(host, port);
+                refreshStoredPinIndicator();
+            }
+        });
+        HBox pinRow = new HBox(10, pinStatusLabel, new Region(), clearPinBtn);
+        HBox.setHgrow(pinRow.getChildren().get(1), Priority.ALWAYS);
+        pinRow.setAlignment(Pos.CENTER_LEFT);
 
-        // Username
-        gbc.gridx = 0; gbc.gridy = 3;
-        formPanel.add(new JLabel("Employee Username:"), gbc);
-        gbc.gridx = 1;
-        formPanel.add(usernameField, gbc);
+        VBox gatewayCard = new VBox(8,
+                new Label("GATEWAY ENDPOINT & IDENTITY PINNING"),
+                netGrid,
+                new Label("Expected Server Fingerprint (Optional TOFU Pre-Check)"),
+                expectedFpField,
+                pinRow
+        );
+        gatewayCard.getStyleClass().add("card");
 
-        // Password
-        gbc.gridx = 0; gbc.gridy = 4;
-        formPanel.add(new JLabel("Office Password:"), gbc);
-        gbc.gridx = 1;
-        formPanel.add(passwordField, gbc);
+        usernameField.setPromptText("e.g. alice_fin or admin_hq");
+        passwordField.setPromptText("Account passphrase");
+        totpField.setPromptText("Optional 6-digit TOTP 2FA code (if MFA enabled)");
 
-        mainPanel.add(formPanel, BorderLayout.CENTER);
+        VBox authCard = new VBox(8,
+                new Label("ZERO-TRUST CREDENTIALS"),
+                new Label("Username"), usernameField,
+                new Label("Passphrase"), passwordField,
+                new Label("Authenticator 2FA Code (Optional)"), totpField
+        );
+        authCard.getStyleClass().add("card");
 
-        // Bottom Controls and Status
-        JPanel bottomPanel = new JPanel(new BorderLayout(10, 10));
+        errorLabel.setStyle("-fx-text-fill: #f87171; -fx-font-weight: bold;");
+        errorLabel.setWrapText(true);
 
-        progressBar.setIndeterminate(false);
+        progressBar.setMaxWidth(Double.MAX_VALUE);
+        progressBar.setPrefHeight(6);
         progressBar.setVisible(false);
 
-        JPanel actionPanel = new JPanel(new BorderLayout(5, 5));
-        connectButton.setFont(new Font("SansSerif", Font.BOLD, 13));
-        connectButton.setForeground(new Color(15, 75, 175));
-        connectButton.setBackground(new Color(238, 245, 255));
-        connectButton.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(30, 100, 200), 2),
-                BorderFactory.createEmptyBorder(6, 16, 6, 16)
-        ));
-        connectButton.setFocusPainted(false);
-        connectButton.setOpaque(true);
-        connectButton.addActionListener(e -> executeLogin());
+        connectBtn.getStyleClass().add("btn-primary");
+        connectBtn.setMaxWidth(Double.MAX_VALUE);
+        connectBtn.setDefaultButton(true);
+        connectBtn.setOnAction(e -> initiateLogin());
 
-        actionPanel.add(connectButton, BorderLayout.CENTER);
-        actionPanel.add(progressBar, BorderLayout.SOUTH);
+        root.getChildren().addAll(headerBox, gatewayCard, authCard, errorLabel, progressBar, connectBtn);
 
-        statusLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        statusLabel.setForeground(Color.DARK_GRAY);
-
-        bottomPanel.add(actionPanel, BorderLayout.CENTER);
-        bottomPanel.add(statusLabel, BorderLayout.SOUTH);
-
-        mainPanel.add(bottomPanel, BorderLayout.SOUTH);
-
-        getContentPane().add(mainPanel);
-
-        // Enter key action
-        passwordField.addActionListener(e -> executeLogin());
-        usernameField.addActionListener(e -> executeLogin());
+        Scene scene = new Scene(root);
+        UiSafe.applyTheme(scene);
+        stage.setTitle("Office VPN Client — Encrypted Access Portal");
+        stage.setResizable(false);
+        stage.setScene(scene);
+        stage.setOnCloseRequest(e -> Platform.exit());
     }
 
-    private void executeLogin() {
-        String host = hostField.getText().trim();
-        String portStr = portField.getText().trim();
-        String username = usernameField.getText().trim();
-        String pinnedFp = fingerprintField.getText().trim();
-        boolean confirmReplace = replacePinCheckBox.isSelected();
-
-        if (host.isEmpty() || portStr.isEmpty() || username.isEmpty()) {
-            UiSafe.showMessageDialog(this, "Please enter server host, port, and username.", "Input Error", JOptionPane.WARNING_MESSAGE);
+    private void refreshStoredPinIndicator() {
+        String host = safeHost();
+        int port = safePort();
+        if (host.isEmpty() || port <= 0) {
+            pinStatusLabel.setText("Enter valid host and port.");
+            clearPinBtn.setDisable(true);
             return;
         }
+        Optional<String> existing = fingerprintStore.getPinnedFingerprint(host, port);
+        if (existing.isPresent()) {
+            String fp = existing.get();
+            String preview = fp.length() > 24 ? fp.substring(0, 24) + "..." : fp;
+            pinStatusLabel.setText("Stored TOFU Pin: " + preview);
+            clearPinBtn.setDisable(false);
+        } else {
+            pinStatusLabel.setText("No saved pin for " + host + ":" + port + " (TOFU on connect)");
+            clearPinBtn.setDisable(true);
+        }
+    }
 
-        int port;
+    private String safeHost() {
+        return hostField.getText() != null ? hostField.getText().trim() : "";
+    }
+
+    private int safePort() {
         try {
-            port = Integer.parseInt(portStr);
-            if (port < 1 || port > 65535) throw new NumberFormatException();
-        } catch (NumberFormatException e) {
-            UiSafe.showMessageDialog(this, "Invalid port number. Must be between 1 and 65535.", "Port Error", JOptionPane.WARNING_MESSAGE);
-            return;
+            int p = Integer.parseInt(portField.getText().trim());
+            return (p >= 1 && p <= 65535) ? p : -1;
+        } catch (Exception e) {
+            return -1;
         }
-
-        char[] passwordChars = passwordField.getPassword();
-        if (passwordChars == null || passwordChars.length == 0) {
-            UiSafe.showMessageDialog(this, "Please enter your password.", "Input Error", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        connectButton.setEnabled(false);
-        progressBar.setVisible(true);
-        progressBar.setIndeterminate(true);
-        statusLabel.setText("Connecting and executing 3-step cryptographic handshake...");
-
-        TrustedFingerprintStore store = TrustedFingerprintStore.getDefault();
-
-        new SwingWorker<VpnClientEngine, String>() {
-            private String authError = null;
-
-            @Override
-            protected VpnClientEngine doInBackground() throws Exception {
-                VpnClientEngine client = new VpnClientEngine();
-
-                publish("Handshake in progress; validating server identity...");
-                client.connectAndHandshake(host, port, pinnedFp, store, confirmReplace);
-
-                publish("Authenticating user credentials over encrypted tunnel...");
-                String pwdStr = new String(passwordChars);
-                boolean success;
-                try {
-                    success = client.login(username, pwdStr);
-                } finally {
-                    Arrays.fill(passwordChars, '0');
-                }
-
-                if (!success) {
-                    client.disconnect();
-                    authError = "Invalid username/password or account has been disabled by Administrator.";
-                    return null;
-                }
-
-                return client;
-            }
-
-            @Override
-            protected void process(java.util.List<String> chunks) {
-                if (!chunks.isEmpty()) {
-                    statusLabel.setText(chunks.get(chunks.size() - 1));
-                }
-            }
-
-            @Override
-            protected void done() {
-                Arrays.fill(passwordChars, '0');
-                passwordField.setText("");
-
-                connectButton.setEnabled(true);
-                progressBar.setVisible(false);
-
-                try {
-                    VpnClientEngine client = get();
-                    if (client != null && client.isAuthenticated()) {
-                        statusLabel.setText("Authenticated successfully. Opening dashboard...");
-                        dispose();
-                        new ClientDashboardFrame(client).setVisible(true);
-                    } else {
-                        statusLabel.setText("Authentication failed.");
-                        UiSafe.showMessageDialog(LoginFrame.this,
-                                authError != null ? authError : "Authentication rejected by Gateway.",
-                                "Login Failed",
-                                JOptionPane.ERROR_MESSAGE);
-                    }
-                } catch (Exception ex) {
-                    Throwable cause = ex;
-                    while (cause.getCause() != null) {
-                        cause = cause.getCause();
-                    }
-                    String err = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
-                    statusLabel.setText("Connection failed: " + err);
-
-                    if (err.contains("GATEWAY IDENTITY CHANGED")) {
-                        UiSafe.showMessageDialog(LoginFrame.this,
-                                "GATEWAY IDENTITY CHANGED - possible attack!\n\n" +
-                                        "The server at " + host + ":" + port + " presented a public key that differs from your stored pin.\n" +
-                                        "No credentials or session keys were transmitted.\n\n" +
-                                        "Recovery procedure:\n" +
-                                        "1. Obtain the authentic 64-character SHA-256 fingerprint from the administrator out-of-band.\n" +
-                                        "2. Enter it into the 'Pinned Key SHA-256' field.\n" +
-                                        "3. Check the 'Replace stored pin' checkbox.\n" +
-                                        "4. Click Connect to securely enroll the new identity.",
-                                "GATEWAY IDENTITY CHANGED - Security Alert",
-                                JOptionPane.ERROR_MESSAGE);
-                    } else {
-                        UiSafe.showMessageDialog(LoginFrame.this,
-                                "Failed to connect to VPN Gateway:\n" + err,
-                                "Connection / Security Error",
-                                JOptionPane.ERROR_MESSAGE);
-                    }
-                }
-            }
-        }.execute();
     }
 
+    private void initiateLogin() {
+        String host = safeHost();
+        int port = safePort();
+        String username = usernameField.getText() != null ? usernameField.getText().trim() : "";
+        String password = passwordField.getText() != null ? passwordField.getText() : "";
+        String totp = totpField.getText() != null ? totpField.getText().trim() : "";
+        String typedFp = expectedFpField.getText() != null ? expectedFpField.getText().trim() : "";
 
-    public static void main(String[] args) {
-        VpnClientApp.main(args);
+        if (host.isEmpty() || port <= 0) {
+            errorLabel.setText("Enter a valid gateway host and port (1-65535).");
+            return;
+        }
+        if (username.isEmpty() || password.isEmpty()) {
+            errorLabel.setText("Username and passphrase are required.");
+            return;
+        }
+
+        errorLabel.setText("");
+        setBusy(true, "Performing ECDH Handshake & Verify...");
+
+        CompletableFuture.supplyAsync(() -> connectAndAuthenticate(host, port, typedFp, username, password, totp))
+                .whenComplete((engine, err) -> Platform.runLater(() -> {
+                    if (err != null) {
+                        setBusy(false, "");
+                        Throwable cause = err.getCause() != null ? err.getCause() : err;
+                        errorLabel.setText(cause.getMessage());
+                        passwordField.clear();
+                        refreshStoredPinIndicator();
+                    } else {
+                        setBusy(false, "");
+                        ClientDashboardFrame dashboard = new ClientDashboardFrame(new Stage(), engine, fingerprintStore);
+                        dashboard.show();
+                        stage.close();
+                    }
+                }));
+    }
+
+    private VpnClientEngine connectAndAuthenticate(
+            String host,
+            int port,
+            String typedFp,
+            String username,
+            String password,
+            String totp
+    ) {
+        String cleanFp = typedFp.isEmpty() ? null : typedFp;
+        VpnClientEngine activeEngine;
+        try {
+            activeEngine = openHandshake(host, port, cleanFp, false);
+        } catch (SecurityException pinEx) {
+            if (pinEx.getMessage() != null && pinEx.getMessage().contains("GATEWAY IDENTITY CHANGED")) {
+                boolean approved = askConfirmPinReplaceOnFx(pinEx.getMessage());
+                if (!approved) {
+                    throw pinEx;
+                }
+                activeEngine = openHandshake(host, port, cleanFp, true);
+            } else {
+                throw pinEx;
+            }
+        }
+
+        boolean handoff = false;
+        try {
+            boolean authed = activeEngine.login(username, password, totp.isEmpty() ? null : totp);
+            if (!authed) {
+                throw new SecurityException("Authentication rejected: invalid credentials, TOTP code, untrusted device, or account locked.");
+            }
+            handoff = true;
+            return activeEngine;
+        } catch (Exception ex) {
+            throw (ex instanceof RuntimeException re) ? re : new IllegalStateException(ex.getMessage(), ex);
+        } finally {
+            if (!handoff) {
+                activeEngine.close();
+            }
+        }
+    }
+
+    private VpnClientEngine openHandshake(String host, int port, String typedFp, boolean confirmReplace) {
+        VpnClientEngine eng = new VpnClientEngine();
+        boolean ok = false;
+        try {
+            eng.connectAndHandshake(host, port, typedFp, fingerprintStore, confirmReplace);
+            ok = true;
+            return eng;
+        } catch (Exception ex) {
+            throw (ex instanceof RuntimeException re) ? re : new IllegalStateException(ex.getMessage(), ex);
+        } finally {
+            if (!ok) {
+                eng.close();
+            }
+        }
+    }
+
+    private boolean askConfirmPinReplaceOnFx(String details) {
+        CompletableFuture<Boolean> decision = new CompletableFuture<>();
+        Platform.runLater(() -> {
+            boolean yes = UiSafe.showConfirm(stage,
+                    "SECURITY WARNING: Server Key Changed",
+                    "The gateway server's RSA public key fingerprint differs from your stored TOFU pin!",
+                    details + "\n\nOnly click OK if the gateway identity was intentionally rotated by your administrator.");
+            decision.complete(yes);
+        });
+        try {
+            return decision.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (ExecutionException e) {
+            return false;
+        }
+    }
+
+    private void setBusy(boolean busy, String text) {
+        hostField.setDisable(busy);
+        portField.setDisable(busy);
+        expectedFpField.setDisable(busy);
+        usernameField.setDisable(busy);
+        passwordField.setDisable(busy);
+        totpField.setDisable(busy);
+        clearPinBtn.setDisable(busy);
+        connectBtn.setDisable(busy);
+        progressBar.setVisible(busy);
+        progressBar.setProgress(busy ? ProgressBar.INDETERMINATE_PROGRESS : 0);
+        connectBtn.setText(busy ? text : "Connect & Establish Encrypted Tunnel");
     }
 }

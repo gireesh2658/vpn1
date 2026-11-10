@@ -56,9 +56,10 @@ class VaultSecurityTest {
     @DisplayName("Departmental Isolation: Blocks cross-department unauthorized vault access")
     void testDepartmentalIsolation(@TempDir Path tempVaultRoot, @TempDir Path tempDbDir) throws Exception {
         VaultManager vault = new VaultManager(tempVaultRoot);
-        String dbPath = tempDbDir.resolve("vault_audit.db").toString();
+        String dbUrl = "jdbc:h2:mem:vault_audit_" + java.util.UUID.randomUUID().toString().replace("-", "")
+                + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1";
 
-        try (DatabaseManager db = new DatabaseManager(dbPath)) {
+        try (DatabaseManager db = new DatabaseManager(dbUrl, new com.officevpn.security.AuditKeyStore(tempDbDir))) {
             UserAccount financeUser = new UserAccount(
                     1, "alice", "salt", "hash", Department.FINANCE, Role.EMPLOYEE, true, System.currentTimeMillis()
             );
@@ -83,9 +84,10 @@ class VaultSecurityTest {
     @DisplayName("Vault Version Pruning: Quotes fileName in regex and preserves unrelated version files")
     void testVaultVersionPruningRegex(@TempDir Path tempVaultRoot, @TempDir Path tempDbDir) throws Exception {
         VaultManager vault = new VaultManager(tempVaultRoot);
-        String dbPath = tempDbDir.resolve("version_prune.db").toString();
+        String dbUrl = "jdbc:h2:mem:version_prune_" + java.util.UUID.randomUUID().toString().replace("-", "")
+                + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1";
 
-        try (DatabaseManager db = new DatabaseManager(dbPath)) {
+        try (DatabaseManager db = new DatabaseManager(dbUrl, new com.officevpn.security.AuditKeyStore(tempDbDir))) {
             UserAccount engUser = new UserAccount(
                     2, "bob", "salt", "hash", Department.IT, Role.EMPLOYEE, true, System.currentTimeMillis()
             );

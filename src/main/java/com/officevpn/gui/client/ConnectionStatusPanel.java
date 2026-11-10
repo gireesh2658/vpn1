@@ -1,185 +1,257 @@
 package com.officevpn.gui.client;
 
 import com.officevpn.client.VpnClientEngine;
+import com.officevpn.gui.UiSafe;
 import com.officevpn.protocol.VpnPacket;
+import com.officevpn.security.KillSwitchManager;
+import com.officevpn.tunnel.TunnelManager;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextArea;
+import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
 
-import javax.swing.BorderFactory;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
-import javax.swing.SwingUtilities;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Font;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.concurrent.atomic.AtomicLong;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 /**
- * Tunnel Diagnostics and Encrypted Traffic Status Panel for the Employee Client GUI.
- * <p>
- * Displays cryptographic session parameters, assigned virtual IP lease, packet counters,
- * and live encrypted packet sniffer traces (with zero plaintext payload leakage).
+ * JavaFX Client Cryptographic Tunnel Diagnostics, Kill Switch, Split/Full Tunneling &amp; Live Sniffer Console.
  */
-public final class ConnectionStatusPanel extends JPanel implements VpnClientEngine.ClientEventListener {
+public final class ConnectionStatusPanel extends VBox {
 
-    private static final long serialVersionUID = 1L;
+    private static final int MAX_CONSOLE_LINES = 600;
+    private static final DateTimeFormatter TIME_FMT =
+            DateTimeFormatter.ofPattern("HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
 
-    private final transient VpnClientEngine clientEngine;
-    private final JLabel statusLabel = new JLabel("CONNECTED (ENCRYPTED TUNNEL)");
-    private final JLabel vipLabel = new JLabel("10.8.0.x");
-    private final JLabel userLabel = new JLabel("-");
-    private final JLabel deptLabel = new JLabel("-");
-    private final JLabel txCounterLabel = new JLabel("0 packets");
-    private final JLabel rxCounterLabel = new JLabel("0 packets");
-    private final JTextArea snifferArea = new JTextArea();
+    private final VpnClientEngine engine;
+    private final Deque<String> lineBuffer = new ArrayDeque<>(MAX_CONSOLE_LINES + 1);
 
-    private final AtomicLong txCount = new AtomicLong(0);
-    private final AtomicLong rxCount = new AtomicLong(0);
-    private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss");
+    private final Label tunnelModePill = new Label("-");
+    private final Button toggleModeBtn = new Button("Switch Mode");
+    private final Label routesInfoLabel = new Label("-");
 
-    public ConnectionStatusPanel(VpnClientEngine clientEngine) {
-        this.clientEngine = clientEngine;
-        this.clientEngine.addClientEventListener(this);
+    private final Label killSwitchPill = new Label("-");
+    private final Button killSwitchBtn = new Button("Toggle Kill Switch");
 
-        setLayout(new BorderLayout(10, 10));
-        setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+    private final Label dnsGuardPill = new Label("-");
+    private final CheckBox autoReconnectCheck = new CheckBox("Auto-Reconnect Enabled");
 
-        // Top parameters grid
-        JPanel infoPanel = new JPanel(new GridBagLayout());
-        infoPanel.setBorder(BorderFactory.createTitledBorder("Cryptographic Tunnel Status"));
+    private final Label serverFpLabel = new Label("-");
+    private final TextArea telemetryConsole = new TextArea();
 
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(4, 8, 4, 8);
-        gbc.anchor = GridBagConstraints.WEST;
+    private KillSwitchManager.KillSwitchListener ksListener;
 
-        // Row 0
-        gbc.gridx = 0; gbc.gridy = 0;
-        infoPanel.add(new JLabel("Tunnel State:"), gbc);
-        gbc.gridx = 1;
-        statusLabel.setForeground(new Color(0, 128, 0));
-        statusLabel.setFont(statusLabel.getFont().deriveFont(Font.BOLD));
-        infoPanel.add(statusLabel, gbc);
-
-        gbc.gridx = 2;
-        infoPanel.add(new JLabel("Virtual IP Lease:"), gbc);
-        gbc.gridx = 3;
-        vipLabel.setFont(vipLabel.getFont().deriveFont(Font.BOLD));
-        infoPanel.add(vipLabel, gbc);
-
-        // Row 1
-        gbc.gridx = 0; gbc.gridy = 1;
-        infoPanel.add(new JLabel("Authenticated User:"), gbc);
-        gbc.gridx = 1;
-        infoPanel.add(userLabel, gbc);
-
-        gbc.gridx = 2;
-        infoPanel.add(new JLabel("Department / Role:"), gbc);
-        gbc.gridx = 3;
-        infoPanel.add(deptLabel, gbc);
-
-        // Row 2
-        gbc.gridx = 0; gbc.gridy = 2;
-        infoPanel.add(new JLabel("Cryptographic Suite:"), gbc);
-        gbc.gridx = 1;
-        JLabel cipherLabel = new JLabel("AES-256-GCM + HKDF-SHA256 + RSA-2048 OAEP/PSS");
-        cipherLabel.setForeground(new Color(40, 80, 160));
-        infoPanel.add(cipherLabel, gbc);
-
-        gbc.gridx = 2;
-        infoPanel.add(new JLabel("Packets (Tx / Rx):"), gbc);
-        gbc.gridx = 3;
-        JPanel pktPanel = new JPanel();
-        pktPanel.add(txCounterLabel);
-        pktPanel.add(new JLabel(" / "));
-        pktPanel.add(rxCounterLabel);
-        infoPanel.add(pktPanel, gbc);
-
-        add(infoPanel, BorderLayout.NORTH);
-
-        // Bottom: Live Encrypted Traffic Inspector
-        JPanel tracePanel = new JPanel(new BorderLayout(5, 5));
-        tracePanel.setBorder(BorderFactory.createTitledBorder("Encrypted Application-Packet Sniffer (Raw Wire Frame Inspector)"));
-
-        snifferArea.setEditable(false);
-        snifferArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        snifferArea.setBackground(new Color(245, 245, 250));
-        com.officevpn.gui.UiSafe.disableHtml(snifferArea);
-        tracePanel.add(new JScrollPane(snifferArea), BorderLayout.CENTER);
-
-        add(tracePanel, BorderLayout.CENTER);
-
-        updateLabels();
+    public ConnectionStatusPanel(VpnClientEngine engine) {
+        this.engine = engine;
+        setSpacing(14);
+        setPadding(new Insets(18));
+        buildUi();
+        attachKillSwitchListener();
+        refreshControls();
     }
 
-    public void updateLabels() {
-        if (clientEngine.isAuthenticated()) {
-            userLabel.setText(clientEngine.getUsername());
-            vipLabel.setText(clientEngine.getAssignedVirtualIp());
-            deptLabel.setText(clientEngine.getDepartment() + " (" + clientEngine.getRole() + ")");
-            statusLabel.setText("CONNECTED [10.8.0.x Subnet]");
-            statusLabel.setForeground(new Color(0, 140, 0));
-        } else if (clientEngine.isConnected()) {
-            statusLabel.setText("HANDSHAKE COMPLETE (AWAITING AUTH)");
-            statusLabel.setForeground(Color.BLUE);
-        } else {
-            statusLabel.setText("DISCONNECTED");
-            statusLabel.setForeground(Color.RED);
-        }
-    }
+    private void buildUi() {
+        HBox header = new HBox(10);
+        header.setAlignment(Pos.CENTER_LEFT);
+        VBox titleBox = new VBox(2);
+        Label title = new Label("Tunnel Cryptography & Network Defenses");
+        title.getStyleClass().add("page-title");
+        Label subtitle = new Label("Manage Split/Full tunneling routes, fail-closed Kill Switch, DNS Leak Guard, and inspect live AEAD frames");
+        subtitle.getStyleClass().add("page-subtitle");
+        titleBox.getChildren().addAll(title, subtitle);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        Button refreshBtn = new Button("Sync Telemetry");
+        refreshBtn.getStyleClass().add("btn-secondary");
+        refreshBtn.setOnAction(e -> refreshControls());
+        header.getChildren().addAll(titleBox, spacer, refreshBtn);
 
-    @Override
-    public void onChatMessage(String senderUser, String senderDept, String senderVip, String message) {
-        // Chat events handled primarily in ChatPanel
-    }
-
-    @Override
-    public void onPacketSniffed(VpnPacket packet, String direction) {
-        if ("OUTGOING".equalsIgnoreCase(direction)) {
-            txCount.incrementAndGet();
-        } else {
-            rxCount.incrementAndGet();
+        GridPane controlsGrid = new GridPane();
+        controlsGrid.setHgap(14);
+        controlsGrid.setVgap(14);
+        for (int i = 0; i < 3; i++) {
+            ColumnConstraints cc = new ColumnConstraints();
+            cc.setPercentWidth(33.33);
+            controlsGrid.getColumnConstraints().add(cc);
         }
 
-        SwingUtilities.invokeLater(() -> {
-            txCounterLabel.setText(txCount.get() + " tx");
-            rxCounterLabel.setText(rxCount.get() + " rx");
-
-            String timeStr = timeFormat.format(new Date(packet.getTimestamp()));
-            String hmacSnippet = (packet.getPayloadHmacHex() != null && packet.getPayloadHmacHex().length() >= 16)
-                    ? packet.getPayloadHmacHex().substring(0, 16) + "..."
-                    : "NONE";
-            int payloadLen = (packet.getEncryptedPayload() != null) ? packet.getEncryptedPayload().length : 0;
-            long seq = packet.getSequenceNumber();
-            String seqStr = (seq > 0) ? " seq=#" + seq : "";
-
-            String line = String.format("[%s] [%-8s] Type=%-18s VIP=%-10s User=%-12s Bytes=%-5d HMAC=%s%s%n",
-                    timeStr, direction, packet.getType(), packet.getSenderVirtualIp(),
-                    packet.getSenderUsername(), payloadLen, hmacSnippet, seqStr);
-
-            snifferArea.append(line);
-            if (snifferArea.getLineCount() > 200) {
-                try {
-                    int end = snifferArea.getLineEndOffset(10);
-                    snifferArea.replaceRange("", 0, end);
-                } catch (Exception ignored) {
-                }
-            }
-            snifferArea.setCaretPosition(snifferArea.getDocument().getLength());
+        // Card 1: Tunnel Mode (Split / Full)
+        VBox tunnelCard = new VBox(8);
+        tunnelCard.getStyleClass().add("card");
+        Label tTitle = new Label("TUNNEL ROUTING MODE");
+        tTitle.getStyleClass().add("kpi-label");
+        tunnelModePill.getStyleClass().addAll("pill", "pill-info");
+        routesInfoLabel.getStyleClass().add("muted-label");
+        routesInfoLabel.setWrapText(true);
+        toggleModeBtn.getStyleClass().add("btn-secondary");
+        toggleModeBtn.setOnAction(e -> {
+            TunnelManager tm = engine.getTunnelManager();
+            if (tm == null) return;
+            TunnelManager.TunnelMode next = (tm.getMode() == TunnelManager.TunnelMode.FULL)
+                    ? TunnelManager.TunnelMode.SPLIT
+                    : TunnelManager.TunnelMode.FULL;
+            tm.setMode(next);
+            appendStateMessage("Switched tunnel routing mode to " + next);
+            refreshControls();
         });
+        tunnelCard.getChildren().addAll(tTitle, tunnelModePill, routesInfoLabel, toggleModeBtn);
+
+        // Card 2: Kill Switch
+        VBox ksCard = new VBox(8);
+        ksCard.getStyleClass().add("card");
+        Label kTitle = new Label("FAIL-CLOSED KILL SWITCH");
+        kTitle.getStyleClass().add("kpi-label");
+        killSwitchPill.getStyleClass().addAll("pill", "pill-muted");
+        Label ksDesc = new Label("Blocks non-tunnel traffic immediately upon unexpected socket drops.");
+        ksDesc.getStyleClass().add("muted-label");
+        ksDesc.setWrapText(true);
+        killSwitchBtn.getStyleClass().add("btn-warning");
+        killSwitchBtn.setOnAction(e -> {
+            KillSwitchManager ks = engine.getKillSwitchManager();
+            if (ks == null) return;
+            if (ks.getState() == KillSwitchManager.State.DISABLED) {
+                ks.enable();
+                appendStateMessage("Kill Switch ENABLED by user");
+            } else {
+                String uname = engine.getUsername() != null ? engine.getUsername() : "client";
+                ks.disable(uname, "Manually disengaged by user");
+                appendStateMessage("Kill Switch DISABLED by user");
+            }
+            refreshControls();
+        });
+        ksCard.getChildren().addAll(kTitle, killSwitchPill, ksDesc, killSwitchBtn);
+
+        // Card 3: DNS Leak Guard & Auto-Reconnect
+        VBox dnsCard = new VBox(8);
+        dnsCard.getStyleClass().add("card");
+        Label dTitle = new Label("DNS LEAK GUARD & RECOVERY");
+        dTitle.getStyleClass().add("kpi-label");
+        dnsGuardPill.getStyleClass().addAll("pill", "pill-success");
+        autoReconnectCheck.setSelected(engine.getAutoReconnectManager() != null && engine.getAutoReconnectManager().isEnabled());
+        autoReconnectCheck.setOnAction(e -> {
+            boolean en = autoReconnectCheck.isSelected();
+            engine.setAutoReconnect(en);
+            appendStateMessage("Auto-reconnect set to " + (en ? "ENABLED" : "DISABLED"));
+        });
+        serverFpLabel.getStyleClass().addAll("muted-label", "mono-text");
+        serverFpLabel.setWrapText(true);
+        dnsCard.getChildren().addAll(dTitle, dnsGuardPill, autoReconnectCheck, serverFpLabel);
+
+        controlsGrid.add(tunnelCard, 0, 0);
+        controlsGrid.add(ksCard, 1, 0);
+        controlsGrid.add(dnsCard, 2, 0);
+
+        // Telemetry Sniffer Console
+        VBox consoleCard = new VBox(10);
+        consoleCard.getStyleClass().add("card");
+        VBox.setVgrow(consoleCard, Priority.ALWAYS);
+
+        HBox consoleBar = new HBox(10);
+        consoleBar.setAlignment(Pos.CENTER_LEFT);
+        Label cTitle = new Label("Live Wire Encryption & Handshake Telemetry");
+        cTitle.getStyleClass().add("section-title");
+        Region cSpacer = new Region();
+        HBox.setHgrow(cSpacer, Priority.ALWAYS);
+        Button copyBtn = new Button("Copy Log");
+        copyBtn.getStyleClass().add("btn-secondary");
+        copyBtn.setOnAction(e -> UiSafe.copyToClipboard(telemetryConsole.getText()));
+        Button clearBtn = new Button("Clear");
+        clearBtn.getStyleClass().add("btn-danger");
+        clearBtn.setOnAction(e -> {
+            lineBuffer.clear();
+            telemetryConsole.clear();
+        });
+        consoleBar.getChildren().addAll(cTitle, cSpacer, copyBtn, clearBtn);
+
+        telemetryConsole.setEditable(false);
+        telemetryConsole.setWrapText(false);
+        telemetryConsole.getStyleClass().add("console-area");
+        VBox.setVgrow(telemetryConsole, Priority.ALWAYS);
+
+        consoleCard.getChildren().addAll(consoleBar, telemetryConsole);
+
+        getChildren().addAll(header, controlsGrid, consoleCard);
     }
 
-    @Override
-    public void onConnectionStateChanged(String state) {
-        SwingUtilities.invokeLater(() -> {
-            updateLabels();
-            snifferArea.append("[" + timeFormat.format(new Date()) + "] [STATE] " + state + "\n");
+    private void attachKillSwitchListener() {
+        KillSwitchManager ks = engine.getKillSwitchManager();
+        if (ks == null) return;
+        this.ksListener = (newState, reason) -> UiSafe.runOnFxThread(() -> {
+            refreshControls();
+            appendStateMessage("Kill Switch -> " + newState + " (" + UiSafe.text(reason, 128) + ")");
+        });
+        ks.addListener(this.ksListener);
+    }
+
+    public void dispose() {
+        KillSwitchManager ks = engine.getKillSwitchManager();
+        if (ks != null && ksListener != null) {
+            ks.removeListener(ksListener);
+        }
+    }
+
+    public void refreshControls() {
+        TunnelManager tm = engine.getTunnelManager();
+        if (tm != null) {
+            tunnelModePill.setText("MODE: " + tm.getMode().name());
+            tunnelModePill.getStyleClass().removeAll("pill-info", "pill-warning");
+            tunnelModePill.getStyleClass().add(tm.getMode() == TunnelManager.TunnelMode.FULL ? "pill-warning" : "pill-info");
+            toggleModeBtn.setText(tm.getMode() == TunnelManager.TunnelMode.FULL ? "Switch to SPLIT" : "Switch to FULL");
+            routesInfoLabel.setText("Office Routes: " + String.join(", ", tm.getOfficeRoutes()));
+        }
+
+        KillSwitchManager ks = engine.getKillSwitchManager();
+        if (ks != null) {
+            KillSwitchManager.State st = ks.getState();
+            killSwitchPill.setText("STATE: " + st.name());
+            killSwitchPill.getStyleClass().removeAll("pill-success", "pill-danger", "pill-muted");
+            killSwitchPill.getStyleClass().add(switch (st) {
+                case ENABLED -> "pill-success";
+                case BLOCKING -> "pill-danger";
+                case DISABLED -> "pill-muted";
+            });
+            killSwitchBtn.setText(st == KillSwitchManager.State.DISABLED ? "Enable Kill Switch" : "Disable Kill Switch");
+        }
+
+        dnsGuardPill.setText(UiSafe.text(engine.getDnsStatus(), 64));
+        String fp = engine.getServerFingerprint();
+        serverFpLabel.setText("Pinned Gateway FP: " + (fp != null && fp.length() > 24 ? fp.substring(0, 24) + "..." : fp));
+    }
+
+    public void appendPacketSniffer(VpnPacket packet, String direction) {
+        if (packet == null) return;
+        byte[] enc = packet.getEncryptedPayload();
+        int len = enc != null ? enc.length : 0;
+        appendLine(String.format("[%s] [%-8s] %-22s | seq=%d | %d B encrypted",
+                TIME_FMT.format(Instant.now()),
+                direction,
+                packet.getType(),
+                packet.getSequenceNumber(),
+                len));
+    }
+
+    public void appendStateMessage(String msg) {
+        appendLine("[" + TIME_FMT.format(Instant.now()) + "] [STATE] " + UiSafe.text(msg, 256));
+    }
+
+    private void appendLine(String line) {
+        UiSafe.runOnFxThread(() -> {
+            if (lineBuffer.size() >= MAX_CONSOLE_LINES) {
+                lineBuffer.removeFirst();
+            }
+            lineBuffer.addLast(line);
+            telemetryConsole.appendText(line + "\n");
+            telemetryConsole.positionCaret(telemetryConsole.getLength());
         });
     }
 }
-
-

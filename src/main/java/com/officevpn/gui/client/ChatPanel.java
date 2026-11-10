@@ -2,141 +2,120 @@ package com.officevpn.gui.client;
 
 import com.officevpn.client.VpnClientEngine;
 import com.officevpn.gui.UiSafe;
-import com.officevpn.protocol.VpnPacket;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
 
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
-import javax.swing.JTextField;
-import javax.swing.SwingUtilities;
-import javax.swing.SwingWorker;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Font;
-import java.awt.event.ActionEvent;
-import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.concurrent.CompletableFuture;
 
 /**
- * Encrypted Office Intranet Chat Panel for the Employee Client GUI.
- * <p>
- * Subscribes to real-time chat broadcasts delivered over the VPN tunnel.
- * All chat payloads are encrypted end-to-end via AES-256-GCM.
- * Thread-safe: All UI mutations occur strictly on the Swing Event Dispatch Thread.
+ * JavaFX Encrypted Intranet Broadcast Chat &amp; System Announcement Feed.
  */
-public final class ChatPanel extends JPanel implements VpnClientEngine.ClientEventListener {
+public final class ChatPanel extends VBox {
 
-    private static final long serialVersionUID = 1L;
+    private static final DateTimeFormatter TIME_FMT =
+            DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
 
-    private final transient VpnClientEngine clientEngine;
-    private final JTextArea chatArea = new JTextArea();
-    private final JTextField messageField = new JTextField();
-    private final JButton sendButton = new JButton("Send Message");
-    private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss");
+    private final VpnClientEngine engine;
+    private final TextArea chatFeed = new TextArea();
+    private final TextField composer = new TextField();
+    private final Label statusPill = new Label("AES-256-GCM E2E Wire");
 
-    public ChatPanel(VpnClientEngine clientEngine) {
-        this.clientEngine = clientEngine;
-        this.clientEngine.addClientEventListener(this);
-
-        setLayout(new BorderLayout(8, 8));
-        setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-
-        // Center: Chat History
-        chatArea.setEditable(false);
-        chatArea.setLineWrap(true);
-        chatArea.setWrapStyleWord(true);
-        chatArea.setFont(new Font("SansSerif", Font.PLAIN, 13));
-        chatArea.setBackground(new Color(250, 250, 252));
-        com.officevpn.gui.UiSafe.disableHtml(chatArea);
-        chatArea.append("=== Encrypted Office Intranet Chat (Broadcast Channel) ===\n");
-        chatArea.append("All messages are encrypted with AES-256-GCM and authenticated over the 10.8.0.x tunnel.\n\n");
-
-        JScrollPane scrollPane = new JScrollPane(chatArea);
-        scrollPane.setBorder(BorderFactory.createTitledBorder("Intranet Chat Messages"));
-        add(scrollPane, BorderLayout.CENTER);
-
-        // Bottom: Message composer
-        JPanel inputPanel = new JPanel(new BorderLayout(8, 0));
-        inputPanel.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
-        messageField.setFont(new Font("SansSerif", Font.PLAIN, 13));
-        inputPanel.add(messageField, BorderLayout.CENTER);
-        inputPanel.add(sendButton, BorderLayout.EAST);
-
-        add(inputPanel, BorderLayout.SOUTH);
-
-        // Action Listeners
-        sendButton.addActionListener(this::handleSendMessage);
-        messageField.addActionListener(this::handleSendMessage);
+    public ChatPanel(VpnClientEngine engine) {
+        this.engine = engine;
+        setSpacing(14);
+        setPadding(new Insets(18));
+        buildUi();
     }
 
-    private void handleSendMessage(ActionEvent e) {
-        String text = messageField.getText().trim();
-        if (text.isEmpty()) {
-            return;
-        }
+    private void buildUi() {
+        HBox header = new HBox(10);
+        header.setAlignment(Pos.CENTER_LEFT);
+        VBox titleBox = new VBox(2);
+        Label title = new Label("Secure Office Intranet Chat");
+        title.getStyleClass().add("page-title");
+        Label subtitle = new Label("Real-time encrypted departmental messaging and gateway broadcast channel");
+        subtitle.getStyleClass().add("page-subtitle");
+        titleBox.getChildren().addAll(title, subtitle);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        statusPill.getStyleClass().addAll("pill", "pill-success");
+        header.getChildren().addAll(titleBox, spacer, statusPill);
 
-        messageField.setText("");
-        messageField.setEnabled(false);
-        sendButton.setEnabled(false);
+        chatFeed.setEditable(false);
+        chatFeed.setWrapText(true);
+        chatFeed.getStyleClass().add("chat-area");
+        chatFeed.setText("=== Connected to Encrypted Intranet Channel (10.8.0.1) ===\n");
+        VBox.setVgrow(chatFeed, Priority.ALWAYS);
 
-        new SwingWorker<Void, Void>() {
-            @Override
-            protected Void doInBackground() throws Exception {
-                clientEngine.sendChatMessage(text);
-                return null;
-            }
+        composer.setPromptText("Write an encrypted message to online office colleagues...");
+        HBox.setHgrow(composer, Priority.ALWAYS);
 
-            @Override
-            protected void done() {
-                messageField.setEnabled(true);
-                sendButton.setEnabled(true);
-                messageField.requestFocusInWindow();
+        Button sendBtn = new Button("Send Encrypted");
+        sendBtn.getStyleClass().add("btn-primary");
+
+        Button clearBtn = new Button("Clear");
+        clearBtn.getStyleClass().add("btn-secondary");
+        clearBtn.setOnAction(e -> chatFeed.clear());
+
+        Runnable sendAction = () -> {
+            String msg = composer.getText() != null ? composer.getText().trim() : "";
+            if (msg.isEmpty()) return;
+            composer.setDisable(true);
+            sendBtn.setDisable(true);
+            CompletableFuture.runAsync(() -> {
                 try {
-                    get();
+                    engine.sendChatMessage(msg);
                 } catch (Exception ex) {
-                    UiSafe.showMessageDialog(ChatPanel.this,
-                            "Failed to deliver chat message: " + ex.getMessage(),
-                            "Chat Delivery Error",
-                            JOptionPane.ERROR_MESSAGE);
+                    throw new IllegalStateException(ex.getMessage(), ex);
                 }
-            }
-        }.execute();
+            }).whenComplete((v, err) -> Platform.runLater(() -> {
+                composer.setDisable(false);
+                sendBtn.setDisable(false);
+                if (err != null) {
+                    Throwable cause = err.getCause() != null ? err.getCause() : err;
+                    UiSafe.showError(UiSafe.windowOf(this), "Chat Send Failed", cause.getMessage());
+                } else {
+                    composer.clear();
+                    composer.requestFocus();
+                }
+            }));
+        };
+
+        sendBtn.setOnAction(e -> sendAction.run());
+        composer.setOnAction(e -> sendAction.run());
+
+        HBox composerBar = new HBox(10, composer, sendBtn, clearBtn);
+        composerBar.setAlignment(Pos.CENTER_LEFT);
+
+        VBox card = new VBox(12, chatFeed, composerBar);
+        card.getStyleClass().add("card");
+        VBox.setVgrow(card, Priority.ALWAYS);
+
+        getChildren().addAll(header, card);
     }
 
-    public javax.swing.JTextArea getChatArea() {
-        return chatArea;
-    }
-
-    @Override
-    public void onChatMessage(String senderUser, String senderDept, String senderVip, String message) {
-        SwingUtilities.invokeLater(() -> {
-            String timeStr = timeFormat.format(new Date());
-            String safeSender = com.officevpn.gui.UiSafe.text(senderUser, 32);
-            String safeDept = com.officevpn.gui.UiSafe.text(senderDept, 32);
-            String safeVip = com.officevpn.gui.UiSafe.text(senderVip, 32);
-            String safeMsg = com.officevpn.gui.UiSafe.text(message, 1024);
-            String formattedLine = String.format("[%s] %s (%s @ %s): %s%n",
-                    timeStr, safeSender, safeDept, safeVip, safeMsg);
-            chatArea.append(formattedLine);
-            chatArea.setCaretPosition(chatArea.getDocument().getLength());
-        });
-    }
-
-    @Override
-    public void onPacketSniffed(VpnPacket packet, String direction) {
-        // Handled in ConnectionStatusPanel
-    }
-
-    @Override
-    public void onConnectionStateChanged(String state) {
-        SwingUtilities.invokeLater(() -> {
-            chatArea.append("[" + timeFormat.format(new Date()) + "] [SYSTEM] " + state + "\n");
-            chatArea.setCaretPosition(chatArea.getDocument().getLength());
+    public void appendChatMessage(String senderUser, String senderDept, String senderVip, String message) {
+        String safeUser = UiSafe.text(senderUser, 32);
+        String safeDept = UiSafe.text(senderDept, 32);
+        String safeVip = UiSafe.text(senderVip, 32);
+        String safeMsg = UiSafe.text(message, 1024);
+        String ts = TIME_FMT.format(Instant.now());
+        String formatted = String.format("[%s] [%s] %s (%s): %s%n", ts, safeDept, safeUser, safeVip, safeMsg);
+        UiSafe.runOnFxThread(() -> {
+            chatFeed.appendText(formatted);
+            chatFeed.positionCaret(chatFeed.getLength());
         });
     }
 }
-
-

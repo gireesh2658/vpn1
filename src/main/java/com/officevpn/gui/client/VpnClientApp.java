@@ -1,24 +1,27 @@
 package com.officevpn.gui.client;
 
-import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
+import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.stage.Stage;
 
 /**
- * Entry point for launching the Office VPN Remote Employee Client Application.
+ * Office VPN Encrypted Client Application Launcher.
+ * Separate non-{@link Application} launcher ensures self-contained shaded JAR compatibility on Java 25.
  */
 public final class VpnClientApp {
 
-    public static void main(String[] args) {
-        // Set cross-platform or system look and feel
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception ignored) {
-        }
+    private VpnClientApp() {}
 
-        SwingUtilities.invokeLater(() -> {
-            LoginFrame loginFrame = new LoginFrame();
-            loginFrame.setVisible(true);
-        });
+    public static void main(String[] args) {
+        Application.launch(ClientFxApplication.class, args);
+    }
+
+    public static final class ClientFxApplication extends Application {
+        @Override
+        public void start(Stage primaryStage) {
+            Platform.setImplicitExit(true);
+            LoginFrame loginFrame = new LoginFrame(primaryStage);
+            loginFrame.show();
+        }
     }
 }
-

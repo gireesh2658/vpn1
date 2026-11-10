@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Enterprise Token-Bucket Bandwidth Rate Limiter.
@@ -67,6 +68,7 @@ public final class BandwidthManager {
     private final DatabaseManager databaseManager;
     private final boolean enabled;
     private final Map<String, TokenBucket> userBuckets = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> pendingAllowedBytes = new ConcurrentHashMap<>();
     private final Map<String, Integer> userCustomLimits = new ConcurrentHashMap<>();
     private final Map<Department, Integer> departmentLimits = new ConcurrentHashMap<>();
 
@@ -138,12 +140,17 @@ public final class BandwidthManager {
         boolean allowed = bucket.tryConsume(bytes);
         if (!allowed) {
             LOGGER.warn("BANDWIDTH_THROTTLED: User '{}' exceeded throughput quota (requested {} bytes)", username, bytes);
-            if (databaseManager != null) {
+            if (databaseManager != null && !databaseManager.isClosed()) {
                 databaseManager.logBandwidthConsumption(username, 0, bytes);
             }
-        } else {
-            if (databaseManager != null && bytes > 64 * 1024) {
-                databaseManager.logBandwidthConsumption(username, bytes, 0);
+        } else if (databaseManager != null && !databaseManager.isClosed() && bytes > 0) {
+            AtomicLong acc = pendingAllowedBytes.computeIfAbsent(username, k -> new AtomicLong(0L));
+            long current = acc.addAndGet(bytes);
+            if (current >= 1024L) {
+                long toFlush = acc.getAndSet(0L);
+                if (toFlush > 0) {
+                    databaseManager.logBandwidthConsumption(username, toFlush, 0);
+                }
             }
         }
         return allowed;

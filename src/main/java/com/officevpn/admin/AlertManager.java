@@ -13,7 +13,7 @@ import java.util.Objects;
 
 /**
  * Enterprise Alerting &amp; Real-Time Security Incident Monitoring Service.
- * Centralizes alert dispatch, severity classification, and persistence to SQLite.
+ * Centralizes alert dispatch, severity classification, and persistence to MySQL.
  */
 public final class AlertManager {
 

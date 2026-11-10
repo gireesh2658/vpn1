@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Enterprise Session Manager managing concurrent VPN sessions, virtual IP leases,
- * device limits, idle/absolute timeout eviction, and SQLite database synchronization.
+ * device limits, idle/absolute timeout eviction, and MySQL database synchronization.
  */
 public final class SessionManager {
 
@@ -53,7 +53,7 @@ public final class SessionManager {
 
     /**
      * Creates and registers a new active VPN session.
-     * Enforces device limits and synchronizes session state to the SQLite database.
+     * Enforces device limits and synchronizes session state to the MySQL database.
      *
      * @param username          user identity
      * @param department        department name

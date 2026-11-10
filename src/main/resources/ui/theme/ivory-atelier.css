@@ -1,0 +1,689 @@
+/*
+ * Ivory Atelier — Strictly Light, Editorial, Warm Paper Design System
+ * Built on AtlantaFX PrimerLight foundation. No dark surfaces anywhere;
+ * deep ink (#26233A) is reserved for typography and hairline icons only.
+ */
+
+.root {
+    /* Core Tokens */
+    -ia-canvas:        #FBF8F1;
+    -ia-paper:         #FFFFFF;
+    -ia-sand:          #F2EBDC;
+    -ia-hairline:      #E6DCC6;
+
+    -ia-marigold:      #FFB224;
+    -ia-peacock:       #0E9F9A;
+    -ia-coral:         #F4604C;
+    -ia-lilac:         #7C6CF0;
+
+    -ia-ink:           #26233A;
+    -ia-soft-ink:      #6A6580;
+
+    /* Contrast-safe semantic foregrounds (>= 4.5:1 against paper/canvas) */
+    -ia-marigold-text: #7A4B00;
+    -ia-peacock-text:  #096B67;
+    -ia-coral-text:    #BA2A1A;
+    -ia-lilac-text:    #4F3CC9;
+
+    /* Soft semantic tints */
+    -ia-marigold-soft: #FFF5DC;
+    -ia-peacock-soft:  #E5F6F5;
+    -ia-coral-soft:    #FEECE9;
+    -ia-lilac-soft:    #EFEBFD;
+
+    /* Override AtlantaFX foundation tokens so stock controls match Ivory Atelier strictly */
+    -color-bg-default:      -ia-paper;
+    -color-bg-subtle:       -ia-canvas;
+    -color-bg-inset:        -ia-sand;
+    -color-fg-default:      -ia-ink;
+    -color-fg-muted:        -ia-soft-ink;
+    -color-border-default:  -ia-hairline;
+    -color-border-subtle:   -ia-hairline;
+    -color-accent-emphasis: -ia-marigold;
+    -color-accent-fg:       -ia-ink;
+
+    -fx-background-color: -ia-canvas;
+    -fx-text-fill: -ia-ink;
+    -fx-font-family: "Manrope", "Segoe UI";
+    -fx-font-size: 13px;
+}
+
+/* ---------------- Typography ---------------- */
+.ia-display-xl {
+    -fx-font-family: "Fraunces SemiBold", "Fraunces", "Segoe UI";
+    -fx-font-size: 28px;
+    -fx-text-fill: -ia-ink;
+}
+
+.ia-display-lg {
+    -fx-font-family: "Fraunces SemiBold", "Fraunces", "Segoe UI";
+    -fx-font-size: 21px;
+    -fx-text-fill: -ia-ink;
+}
+
+.ia-display-md {
+    -fx-font-family: "Fraunces", "Segoe UI";
+    -fx-font-weight: bold;
+    -fx-font-size: 17px;
+    -fx-text-fill: -ia-ink;
+}
+
+.ia-section-label {
+    -fx-font-family: "Manrope SemiBold", "Manrope", "Segoe UI";
+    -fx-font-size: 11px;
+    -fx-text-fill: -ia-soft-ink;
+}
+
+.ia-card-title {
+    -fx-font-family: "Manrope SemiBold", "Manrope", "Segoe UI";
+    -fx-font-size: 15px;
+    -fx-text-fill: -ia-ink;
+}
+
+.ia-subtitle {
+    -fx-font-family: "Manrope", "Segoe UI";
+    -fx-font-size: 12.5px;
+    -fx-text-fill: -ia-soft-ink;
+}
+
+.ia-mono {
+    -fx-font-family: "JetBrains Mono", "Consolas";
+    -fx-font-size: 12px;
+    -fx-text-fill: -ia-ink;
+}
+
+.ia-mono-soft {
+    -fx-font-family: "JetBrains Mono", "Consolas";
+    -fx-font-size: 11.5px;
+    -fx-text-fill: -ia-soft-ink;
+}
+
+/* ---------------- Opaque Layered Paper Surfaces ---------------- */
+.ia-card-shadow-outer {
+    -fx-background-color: transparent;
+}
+
+.ia-card-paper {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 14px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 14px;
+}
+
+.ia-card-sand {
+    -fx-background-color: -ia-sand;
+    -fx-background-radius: 12px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 12px;
+}
+
+/* ---------------- Stock AtlantaFX Overrides (Warm Light Inputs, Scrollbars, Tooltips) ---------------- */
+.text-field, .password-field, .text-area, .combo-box-base {
+    -fx-background-color: -ia-paper;
+    -fx-text-fill: -ia-ink;
+    -fx-prompt-text-fill: -ia-soft-ink;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 9px;
+    -fx-background-radius: 9px;
+    -fx-font-family: "Manrope", "Segoe UI";
+}
+
+.text-field:focused, .password-field:focused, .text-area:focused, .combo-box-base:focused {
+    -fx-border-color: -ia-peacock;
+    -fx-border-width: 1.5px;
+}
+
+.button {
+    -fx-background-color: -ia-paper;
+    -fx-text-fill: -ia-ink;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 9px;
+    -fx-background-radius: 9px;
+    -fx-font-family: "Manrope SemiBold", "Manrope", "Segoe UI";
+    -fx-padding: 7px 14px;
+    -fx-cursor: hand;
+}
+
+.button:hover {
+    -fx-background-color: -ia-sand;
+}
+
+.button:focused {
+    -fx-border-color: -ia-peacock;
+    -fx-border-width: 1.5px;
+}
+
+.ia-btn-marigold {
+    -fx-background-color: -ia-marigold;
+    -fx-text-fill: -ia-ink;
+    -fx-border-color: #E09812;
+    -fx-font-family: "Manrope", "Segoe UI";
+    -fx-font-weight: bold;
+}
+
+.ia-btn-marigold:hover {
+    -fx-background-color: #FFA505;
+}
+
+.ia-btn-peacock {
+    -fx-background-color: -ia-peacock-soft;
+    -fx-text-fill: -ia-peacock-text;
+    -fx-border-color: #B4E2DF;
+}
+
+.ia-btn-peacock:hover {
+    -fx-background-color: #D5F0EE;
+}
+
+.ia-btn-coral {
+    -fx-background-color: -ia-coral-soft;
+    -fx-text-fill: -ia-coral-text;
+    -fx-border-color: #F4C3BC;
+}
+
+.ia-btn-coral:hover {
+    -fx-background-color: #FCDFD9;
+}
+
+/* Light Warm Tooltips (never dark) */
+.tooltip {
+    -fx-background-color: -ia-paper;
+    -fx-text-fill: -ia-ink;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-background-radius: 8px;
+    -fx-border-radius: 8px;
+    -fx-font-family: "Manrope", "Segoe UI";
+    -fx-font-size: 12px;
+    -fx-padding: 6px 10px;
+}
+
+/* Light ScrollPane & ScrollBars */
+.scroll-pane, .scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+
+.scroll-bar:vertical, .scroll-bar:horizontal {
+    -fx-background-color: transparent;
+}
+
+.scroll-bar .track {
+    -fx-background-color: -ia-canvas;
+    -fx-background-radius: 6px;
+}
+
+.scroll-bar .thumb {
+    -fx-background-color: #D7CCB5;
+    -fx-background-radius: 6px;
+}
+
+.scroll-bar .thumb:hover {
+    -fx-background-color: #BBAE93;
+}
+
+.scroll-bar .increment-button, .scroll-bar .decrement-button {
+    -fx-padding: 0;
+    -fx-opacity: 0;
+}
+
+/* Light Tables */
+.table-view {
+    -fx-background-color: -ia-paper;
+    -fx-border-color: -ia-hairline;
+    -fx-border-radius: 12px;
+    -fx-background-radius: 12px;
+}
+
+.table-view .column-header-background {
+    -fx-background-color: -ia-canvas;
+    -fx-border-color: transparent transparent -ia-hairline transparent;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.table-view .column-header, .table-view .filler {
+    -fx-background-color: transparent;
+    -fx-size: 36px;
+}
+
+.table-view .column-header .label {
+    -fx-font-family: "Manrope SemiBold", "Manrope", "Segoe UI";
+    -fx-font-size: 11.5px;
+    -fx-text-fill: -ia-soft-ink;
+    -fx-alignment: CENTER_LEFT;
+}
+
+.table-row-cell {
+    -fx-background-color: -ia-paper;
+    -fx-border-color: transparent transparent -ia-hairline transparent;
+    -fx-border-width: 0 0 1px 0;
+    -fx-cell-size: 46px;
+}
+
+.table-row-cell:odd {
+    -fx-background-color: #FDFBF7;
+}
+
+.table-row-cell:selected {
+    -fx-background-color: -ia-marigold-soft;
+    -fx-text-fill: -ia-ink;
+}
+
+.table-cell {
+    -fx-text-fill: -ia-ink;
+    -fx-alignment: CENTER_LEFT;
+}
+
+/* Semantic Pills */
+.ia-pill {
+    -fx-background-radius: 999px;
+    -fx-border-radius: 999px;
+    -fx-border-width: 1px;
+    -fx-padding: 3px 10px;
+    -fx-font-family: "Manrope SemiBold", "Manrope", "Segoe UI";
+    -fx-font-size: 11px;
+}
+
+.ia-pill-peacock {
+    -fx-background-color: -ia-peacock-soft;
+    -fx-border-color: #BCE6E3;
+    -fx-text-fill: -ia-peacock-text;
+}
+
+.ia-pill-marigold {
+    -fx-background-color: -ia-marigold-soft;
+    -fx-border-color: #F4DA9B;
+    -fx-text-fill: -ia-marigold-text;
+}
+
+.ia-pill-coral {
+    -fx-background-color: -ia-coral-soft;
+    -fx-border-color: #F5C3BC;
+    -fx-text-fill: -ia-coral-text;
+}
+
+.ia-pill-lilac {
+    -fx-background-color: -ia-lilac-soft;
+    -fx-border-color: #CFC8FA;
+    -fx-text-fill: -ia-lilac-text;
+}
+
+.ia-pill-sand {
+    -fx-background-color: -ia-sand;
+    -fx-border-color: -ia-hairline;
+    -fx-text-fill: -ia-ink;
+}
+
+/* ================================================================
+ * COMPONENT: KeycardGate
+ * ================================================================ */
+.keycard-gate {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 16px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 16px;
+    -fx-padding: 16px;
+}
+
+.keycard-gate:focused {
+    -fx-border-color: -ia-marigold;
+    -fx-border-width: 1.8px;
+}
+
+.keycard-gate:connected {
+    -fx-border-color: #9EDAD7;
+}
+
+.keycard-gate:blocked {
+    -fx-border-color: #F0ABA2;
+}
+
+.keycard-badge {
+    -fx-background-color: -ia-sand;
+    -fx-background-radius: 12px;
+    -fx-border-color: #D7CAAF;
+    -fx-border-width: 1px;
+    -fx-border-radius: 12px;
+}
+
+.keycard-reader-slot {
+    -fx-background-color: -ia-canvas;
+    -fx-background-radius: 12px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1.5px;
+    -fx-border-radius: 12px;
+}
+
+/* ================================================================
+ * COMPONENT: HandshakeLoom
+ * ================================================================ */
+.handshake-loom {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 14px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 14px;
+    -fx-padding: 14px 16px;
+}
+
+.handshake-loom:focused {
+    -fx-border-color: -ia-peacock;
+    -fx-border-width: 1.5px;
+}
+
+.handshake-loom:failed {
+    -fx-border-color: #F0ABA2;
+}
+
+/* ================================================================
+ * COMPONENT: OfficeAtlas
+ * ================================================================ */
+.office-atlas {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 16px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 16px;
+    -fx-padding: 16px;
+}
+
+.office-atlas:focused {
+    -fx-border-color: -ia-peacock;
+    -fx-border-width: 1.5px;
+}
+
+.atlas-tab {
+    -fx-background-color: -ia-canvas;
+    -fx-text-fill: -ia-soft-ink;
+    -fx-border-color: -ia-hairline;
+    -fx-border-radius: 8px;
+    -fx-background-radius: 8px;
+    -fx-padding: 5px 12px;
+    -fx-font-family: "Manrope SemiBold", "Manrope", "Segoe UI";
+    -fx-font-size: 12px;
+}
+
+.atlas-tab-active {
+    -fx-background-color: -ia-marigold-soft;
+    -fx-text-fill: -ia-ink;
+    -fx-border-color: #EAC471;
+}
+
+/* ================================================================
+ * COMPONENT: PulseRibbon
+ * ================================================================ */
+.pulse-ribbon {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 16px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 16px;
+    -fx-padding: 16px;
+}
+
+.pulse-ribbon:focused {
+    -fx-border-color: -ia-peacock;
+    -fx-border-width: 1.5px;
+}
+
+/* ================================================================
+ * COMPONENT: GatewayShelf & CommandPalette
+ * ================================================================ */
+.gateway-shelf {
+    -fx-background-color: -ia-canvas;
+    -fx-padding: 4px;
+}
+
+.gateway-shelf:focused {
+    -fx-border-color: -ia-marigold;
+    -fx-border-width: 1.5px;
+    -fx-border-radius: 12px;
+}
+
+.gateway-card {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 12px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 12px;
+    -fx-padding: 12px 14px;
+    -fx-cursor: hand;
+}
+
+.gateway-card:hover {
+    -fx-background-color: #FFFDFA;
+    -fx-border-color: #D2C4A5;
+}
+
+.gateway-card-selected {
+    -fx-background-color: -ia-paper;
+    -fx-border-color: -ia-peacock;
+    -fx-border-width: 1.6px;
+}
+
+.command-palette-surface {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 16px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1.5px;
+    -fx-border-radius: 16px;
+}
+
+/* ================================================================
+ * COMPONENT: WorkModes
+ * ================================================================ */
+.work-modes {
+    -fx-background-color: transparent;
+}
+
+.work-mode-swatch {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 13px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 13px;
+    -fx-padding: 12px 14px;
+    -fx-cursor: hand;
+}
+
+.work-mode-swatch-active {
+    -fx-border-color: -ia-marigold;
+    -fx-border-width: 1.6px;
+    -fx-background-color: #FFFDF8;
+}
+
+/* ================================================================
+ * COMPONENT: SafetyLatches & SplitLanes
+ * ================================================================ */
+.safety-latches {
+    -fx-background-color: transparent;
+}
+
+.latch-row {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 12px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 12px;
+    -fx-padding: 12px 14px;
+}
+
+.split-lane {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 13px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 13px;
+    -fx-padding: 12px;
+}
+
+.split-lane-drop-active {
+    -fx-background-color: -ia-peacock-soft;
+    -fx-border-color: -ia-peacock;
+    -fx-border-width: 1.6px;
+}
+
+.split-app-chip {
+    -fx-background-color: -ia-canvas;
+    -fx-background-radius: 10px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 10px;
+    -fx-padding: 8px 10px;
+    -fx-cursor: hand;
+}
+
+.split-app-chip:hover {
+    -fx-background-color: -ia-sand;
+}
+
+/* ================================================================
+ * COMPONENT: PostureSeal
+ * ================================================================ */
+.posture-seal {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 16px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 16px;
+    -fx-padding: 16px;
+}
+
+.posture-seal:focused {
+    -fx-border-color: -ia-peacock;
+    -fx-border-width: 1.5px;
+}
+
+/* ================================================================
+ * COMPONENT: LiveRoster & SessionTable
+ * ================================================================ */
+.live-roster {
+    -fx-background-color: transparent;
+}
+
+.roster-avatar-chip {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 999px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 999px;
+    -fx-padding: 5px 11px 5px 6px;
+}
+
+/* ================================================================
+ * COMPONENT: AuditThread
+ * ================================================================ */
+.audit-thread {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 14px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 14px;
+    -fx-padding: 16px;
+}
+
+.audit-thread:focused {
+    -fx-border-color: -ia-lilac;
+    -fx-border-width: 1.5px;
+}
+
+/* ================================================================
+ * COMPONENT: SignInCard
+ * ================================================================ */
+.signin-card {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 18px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 18px;
+    -fx-padding: 24px;
+}
+
+.otp-cell {
+    -fx-alignment: CENTER;
+    -fx-font-family: "JetBrains Mono", "Consolas";
+    -fx-font-weight: bold;
+    -fx-font-size: 18px;
+    -fx-background-color: -ia-canvas;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1.2px;
+    -fx-border-radius: 10px;
+    -fx-background-radius: 10px;
+    -fx-padding: 6px;
+}
+
+.otp-cell:focused {
+    -fx-background-color: -ia-paper;
+    -fx-border-color: -ia-peacock;
+    -fx-border-width: 1.8px;
+}
+
+.otp-cell-error {
+    -fx-border-color: transparent transparent -ia-coral transparent;
+    -fx-border-width: 1px 1px 2.5px 1px;
+    -fx-background-color: -ia-coral-soft;
+}
+
+/* ================================================================
+ * COMPONENT: Toasts & TrayFlyout
+ * ================================================================ */
+.ia-toast-slip {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 12px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+    -fx-border-radius: 12px;
+}
+
+.tray-flyout-surface {
+    -fx-background-color: -ia-paper;
+    -fx-background-radius: 16px;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1.2px;
+    -fx-border-radius: 16px;
+    -fx-padding: 16px;
+}
+
+/* ================================================================
+ * SHELL: AppShell Navigation Rail
+ * ================================================================ */
+.app-shell-rail {
+    -fx-background-color: -ia-sand;
+    -fx-border-color: transparent -ia-hairline transparent transparent;
+    -fx-border-width: 0 1px 0 0;
+}
+
+.rail-nav-btn {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-border-radius: 10px;
+    -fx-background-radius: 10px;
+    -fx-text-fill: -ia-soft-ink;
+    -fx-font-family: "Manrope SemiBold", "Manrope", "Segoe UI";
+    -fx-font-size: 13px;
+    -fx-alignment: CENTER_LEFT;
+    -fx-padding: 9px 12px;
+    -fx-cursor: hand;
+}
+
+.rail-nav-btn:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.55);
+    -fx-text-fill: -ia-ink;
+}
+
+.rail-nav-btn:focused {
+    -fx-border-color: -ia-peacock;
+    -fx-border-width: 1.4px;
+}
+
+.rail-nav-btn-active {
+    -fx-background-color: -ia-paper;
+    -fx-text-fill: -ia-ink;
+    -fx-border-color: -ia-hairline;
+    -fx-border-width: 1px;
+}
+

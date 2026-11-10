@@ -1,127 +1,225 @@
 package com.officevpn.gui.admin;
 
+import com.officevpn.admin.AlertManager;
 import com.officevpn.admin.MetricsCollector;
+import com.officevpn.config.ConfigUtil;
+import com.officevpn.db.DatabaseManager;
+import com.officevpn.gui.UiSafe;
+import com.officevpn.server.VpnGatewayServer;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.TableView;
+import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
 
-import javax.swing.BorderFactory;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.SwingConstants;
-import javax.swing.SwingWorker;
-import javax.swing.Timer;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Font;
-import java.awt.GridLayout;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
- * Headquarters Admin Dashboard Overview panel featuring 6 live operational metric cards.
- * Automatically refreshed every 5 seconds via non-blocking background workers.
+ * JavaFX Real-Time Gateway Overview &amp; Telemetry KPI Dashboard.
  */
-public final class OverviewPanel extends JPanel {
+public final class OverviewPanel extends VBox {
 
-    private static final long serialVersionUID = 1L;
+    private final DatabaseManager db;
+    private final MetricsCollector metrics;
+    private final AlertManager alertManager;
+    private volatile VpnGatewayServer gatewayServer;
 
-    private final transient MetricsCollector metricsCollector;
-    private final JLabel activeSessionsVal = new JLabel("-", SwingConstants.CENTER);
-    private final JLabel totalUsersVal = new JLabel("-", SwingConstants.CENTER);
-    private final JLabel connectionsTodayVal = new JLabel("-", SwingConstants.CENTER);
-    private final JLabel uptimeVal = new JLabel("-", SwingConstants.CENTER);
-    private final JLabel avgLatencyVal = new JLabel("-", SwingConstants.CENTER);
-    private final JLabel bandwidthTodayVal = new JLabel("-", SwingConstants.CENTER);
-    private final Timer refreshTimer;
+    private final Label activeSessionsValue = new Label("0");
+    private final Label totalUsersValue = new Label("0");
+    private final Label connectionsTodayValue = new Label("0");
+    private final Label bandwidthTodayValue = new Label("0 B");
+    private final Label avgLatencyValue = new Label("0 ms");
+    private final Label uptimeValue = new Label("0s");
 
-    public OverviewPanel(MetricsCollector metricsCollector) {
-        super(new GridLayout(2, 3, 14, 14));
-        this.metricsCollector = metricsCollector;
-        setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-        setBackground(new Color(245, 248, 252));
+    private final Label fingerprintLabel = new Label("Not started");
+    private final Label poolInfoLabel = new Label("-");
+    private final Label unreadAlertsBadge = new Label("0 Unread Alerts");
+    private final TableView<DatabaseManager.UserBandwidthStat> topBandwidthTable = new TableView<>();
 
-        add(createMetricCard("Active Sessions", activeSessionsVal, new Color(16, 128, 55)));
-        add(createMetricCard("Total Users", totalUsersVal, new Color(2, 99, 186)));
-        add(createMetricCard("Connections Today", connectionsTodayVal, new Color(126, 34, 150)));
-        add(createMetricCard("Server Uptime", uptimeVal, new Color(14, 116, 144)));
-        add(createMetricCard("Avg Round-Trip Latency", avgLatencyVal, new Color(194, 65, 12)));
-        add(createMetricCard("Bandwidth Consumed Today", bandwidthTodayVal, new Color(190, 24, 24)));
+    public OverviewPanel(DatabaseManager db, MetricsCollector metrics, AlertManager alertManager, VpnGatewayServer gatewayServer) {
+        this.db = db;
+        this.metrics = metrics;
+        this.alertManager = alertManager;
+        this.gatewayServer = gatewayServer;
 
-        this.refreshTimer = new Timer(5000, e -> refreshMetrics());
-        this.refreshTimer.start();
-        refreshMetrics();
+        setSpacing(16);
+        setPadding(new Insets(18));
+        buildUi();
+        refresh();
     }
 
-    private JPanel createMetricCard(String title, JLabel valueLabel, Color accentColor) {
-        JPanel card = new JPanel(new BorderLayout(8, 8));
-        card.setBackground(Color.WHITE);
-        card.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(203, 213, 225), 1),
-                BorderFactory.createEmptyBorder(18, 16, 18, 16)
-        ));
+    public void setGatewayServer(VpnGatewayServer server) {
+        this.gatewayServer = server;
+        refresh();
+    }
 
-        JLabel titleLabel = new JLabel(title, SwingConstants.CENTER);
-        titleLabel.setFont(new Font("SansSerif", Font.BOLD, 14));
-        titleLabel.setForeground(new Color(51, 65, 85));
+    private void buildUi() {
+        HBox headerRow = new HBox(10);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+        VBox titleBox = new VBox(2);
+        Label title = new Label("Gateway Telemetry & Executive Overview");
+        title.getStyleClass().add("page-title");
+        Label subtitle = new Label("Live operational metrics, cryptographic identity, MySQL pool health, and top bandwidth consumers");
+        subtitle.getStyleClass().add("page-subtitle");
+        titleBox.getChildren().addAll(title, subtitle);
 
-        valueLabel.setFont(new Font("SansSerif", Font.BOLD, 30));
-        valueLabel.setForeground(accentColor);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        Button refreshBtn = new Button("Refresh Metrics");
+        refreshBtn.getStyleClass().add("btn-secondary");
+        refreshBtn.setOnAction(e -> refresh());
+        headerRow.getChildren().addAll(titleBox, spacer, refreshBtn);
 
-        card.add(titleLabel, BorderLayout.NORTH);
-        card.add(valueLabel, BorderLayout.CENTER);
+        GridPane kpiGrid = new GridPane();
+        kpiGrid.setHgap(14);
+        kpiGrid.setVgap(14);
+        for (int i = 0; i < 3; i++) {
+            ColumnConstraints cc = new ColumnConstraints();
+            cc.setPercentWidth(33.33);
+            kpiGrid.getColumnConstraints().add(cc);
+        }
+
+        kpiGrid.add(createKpiCard("ACTIVE SESSIONS", activeSessionsValue, "kpi-card-cyan"), 0, 0);
+        kpiGrid.add(createKpiCard("REGISTERED USERS", totalUsersValue, "kpi-card-emerald"), 1, 0);
+        kpiGrid.add(createKpiCard("CONNECTIONS TODAY", connectionsTodayValue, "kpi-card-indigo"), 2, 0);
+        kpiGrid.add(createKpiCard("BANDWIDTH TODAY", bandwidthTodayValue, "kpi-card-amber"), 0, 1);
+        kpiGrid.add(createKpiCard("AVG LATENCY", avgLatencyValue, "kpi-card-rose"), 1, 1);
+        kpiGrid.add(createKpiCard("GATEWAY UPTIME", uptimeValue, "kpi-card-teal"), 2, 1);
+
+        // RSA Fingerprint & Environment Strip
+        VBox identityCard = new VBox(8);
+        identityCard.getStyleClass().add("card");
+        HBox fpHeader = new HBox(10);
+        fpHeader.setAlignment(Pos.CENTER_LEFT);
+        Label fpTitle = new Label("Server RSA-2048 Public Key SHA-256 Fingerprint (Client TOFU Pin)");
+        fpTitle.getStyleClass().add("section-title");
+        Region fpSpacer = new Region();
+        HBox.setHgrow(fpSpacer, Priority.ALWAYS);
+        Button copyFpBtn = new Button("Copy Fingerprint");
+        copyFpBtn.getStyleClass().add("btn-secondary");
+        copyFpBtn.setOnAction(e -> UiSafe.copyToClipboard(fingerprintLabel.getText()));
+        fpHeader.getChildren().addAll(fpTitle, fpSpacer, copyFpBtn);
+
+        fingerprintLabel.getStyleClass().add("mono-text");
+        fingerprintLabel.setStyle("-fx-text-fill: #22d3ee; -fx-font-size: 13px; -fx-font-weight: bold;");
+        fingerprintLabel.setWrapText(true);
+
+        HBox runtimeStrip = new HBox(12);
+        runtimeStrip.setAlignment(Pos.CENTER_LEFT);
+        poolInfoLabel.getStyleClass().add("muted-label");
+        unreadAlertsBadge.getStyleClass().addAll("pill", "pill-muted");
+        runtimeStrip.getChildren().addAll(poolInfoLabel, unreadAlertsBadge);
+
+        identityCard.getChildren().addAll(fpHeader, fingerprintLabel, runtimeStrip);
+
+        // Bottom Bandwidth Leaderboard Table
+        VBox bwCard = new VBox(10);
+        bwCard.getStyleClass().add("card");
+        VBox.setVgrow(bwCard, Priority.ALWAYS);
+        Label bwTitle = new Label("Top Bandwidth Consumers");
+        bwTitle.getStyleClass().add("section-title");
+
+        UiSafe.configureSafeTable(topBandwidthTable);
+        topBandwidthTable.getColumns().add(UiSafe.safeColumn("Username", DatabaseManager.UserBandwidthStat::username, 220));
+        topBandwidthTable.getColumns().add(UiSafe.safeColumn("Transferred Bytes", s -> String.valueOf(s.totalBytes()), 160));
+        topBandwidthTable.getColumns().add(UiSafe.safeColumn("Formatted Volume", s -> formatBytes(s.totalBytes()), 180));
+        VBox.setVgrow(topBandwidthTable, Priority.ALWAYS);
+
+        bwCard.getChildren().addAll(bwTitle, topBandwidthTable);
+        getChildren().addAll(headerRow, kpiGrid, identityCard, bwCard);
+    }
+
+    private VBox createKpiCard(String titleText, Label valueLabel, String accentClass) {
+        VBox card = new VBox(6);
+        card.getStyleClass().addAll("kpi-card", accentClass);
+        Label lbl = new Label(titleText);
+        lbl.getStyleClass().add("kpi-label");
+        valueLabel.getStyleClass().add("kpi-value");
+        card.getChildren().addAll(lbl, valueLabel);
         return card;
     }
 
-    public void refreshMetrics() {
-        if (metricsCollector == null) {
+    public void refresh() {
+        if (db.isClosed()) {
             return;
         }
-
-        SwingWorker<Void, Void> worker = new SwingWorker<>() {
-            private int sessions;
-            private int users;
-            private int connections;
-            private long uptimeSec;
-            private long latencyMs;
-            private long bytesToday;
-
-            @Override
-            protected Void doInBackground() {
-                sessions = metricsCollector.getActiveSessionCount();
-                users = metricsCollector.getTotalUsers();
-                connections = metricsCollector.getConnectionsToday();
-                uptimeSec = metricsCollector.getUptimeSeconds();
-                latencyMs = metricsCollector.getAverageLatencyMs();
-                bytesToday = metricsCollector.getBandwidthUsedToday();
+        CompletableFuture.supplyAsync(() -> {
+            if (db.isClosed()) {
                 return null;
             }
-
-            @Override
-            protected void done() {
-                activeSessionsVal.setText(String.valueOf(sessions));
-                totalUsersVal.setText(String.valueOf(users));
-                connectionsTodayVal.setText(String.valueOf(connections));
-
-                long hours = uptimeSec / 3600;
-                long mins = (uptimeSec % 3600) / 60;
-                long secs = uptimeSec % 60;
-                uptimeVal.setText(String.format("%02d:%02d:%02d", hours, mins, secs));
-
-                avgLatencyVal.setText(latencyMs + " ms");
-
-                if (bytesToday >= 1024 * 1024) {
-                    bandwidthTodayVal.setText(String.format("%.2f MB", bytesToday / (1024.0 * 1024.0)));
-                } else if (bytesToday >= 1024) {
-                    bandwidthTodayVal.setText(String.format("%.2f KB", bytesToday / 1024.0));
-                } else {
-                    bandwidthTodayVal.setText(bytesToday + " B");
-                }
-            }
-        };
-        worker.execute();
+            int active = metrics.getActiveSessionCount();
+            int totalUsers = metrics.getTotalUsers();
+            int connsToday = metrics.getConnectionsToday();
+            long bwToday = metrics.getBandwidthUsedToday();
+            long latency = metrics.getAverageLatencyMs();
+            long uptime = metrics.getUptimeSeconds();
+            int unread = alertManager.getUnreadCount();
+            int unreadCrit = alertManager.getUnreadCriticalCount();
+            List<DatabaseManager.UserBandwidthStat> topUsers = metrics.getTopUsersByBandwidth(8);
+            VpnGatewayServer srv = this.gatewayServer;
+            String fp = (srv != null && srv.getServerIdentity() != null)
+                    ? srv.getServerPublicKeyFingerprintHex()
+                    : "Gateway not started";
+            String poolText = String.format("MySQL HikariCP Pool Max: %d  |  Tunnel: %s  |  DNS Guard: %s",
+                    db.getPoolMaxSize(),
+                    ConfigUtil.getTunnelMode(),
+                    ConfigUtil.isDnsLeakProtectionEnabled() ? ConfigUtil.getVpnDns() : "Disabled");
+            return new OverviewSnapshot(active, totalUsers, connsToday, bwToday, latency, uptime, unread, unreadCrit, fp, poolText, topUsers);
+        }).thenAccept(snap -> Platform.runLater(() -> {
+            if (snap == null) return;
+            activeSessionsValue.setText(String.valueOf(snap.active()));
+            totalUsersValue.setText(String.valueOf(snap.totalUsers()));
+            connectionsTodayValue.setText(String.valueOf(snap.connsToday()));
+            bandwidthTodayValue.setText(formatBytes(snap.bwToday()));
+            avgLatencyValue.setText(snap.latency() + " ms");
+            uptimeValue.setText(formatUptime(snap.uptime()));
+            fingerprintLabel.setText(snap.fingerprint());
+            poolInfoLabel.setText(snap.poolText());
+            unreadAlertsBadge.setText(snap.unreadCrit() > 0
+                    ? snap.unreadCrit() + " CRITICAL / " + snap.unread() + " Unread Alerts"
+                    : snap.unread() + " Unread Alerts");
+            unreadAlertsBadge.getStyleClass().removeAll("pill-danger", "pill-warning", "pill-muted", "pill-success");
+            unreadAlertsBadge.getStyleClass().add(
+                    snap.unreadCrit() > 0 ? "pill-danger" : (snap.unread() > 0 ? "pill-warning" : "pill-success"));
+            topBandwidthTable.getItems().setAll(snap.topUsers());
+        }));
     }
 
-    public void stopTimer() {
-        if (refreshTimer != null && refreshTimer.isRunning()) {
-            refreshTimer.stop();
-        }
+    private record OverviewSnapshot(
+            int active,
+            int totalUsers,
+            int connsToday,
+            long bwToday,
+            long latency,
+            long uptime,
+            int unread,
+            int unreadCrit,
+            String fingerprint,
+            String poolText,
+            List<DatabaseManager.UserBandwidthStat> topUsers
+    ) {}
+
+    private static String formatBytes(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
+        if (bytes < 1024L * 1024L * 1024L) return String.format("%.2f MB", bytes / (1024.0 * 1024.0));
+        return String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0));
+    }
+
+    private static String formatUptime(long seconds) {
+        long h = seconds / 3600;
+        long m = (seconds % 3600) / 60;
+        long s = seconds % 60;
+        if (h > 0) return String.format("%dh %dm %ds", h, m, s);
+        if (m > 0) return String.format("%dm %ds", m, s);
+        return s + "s";
     }
 }
-
-

@@ -2,7 +2,8 @@
 
 ![Java 25 LTS](https://img.shields.io/badge/Java-25%20LTS-orange.svg)
 ![Maven](https://img.shields.io/badge/Maven-3.9+-blue.svg)
-![SQLite](https://img.shields.io/badge/SQLite-WAL%20Mode-lightgrey.svg)
+![MySQL](https://img.shields.io/badge/MySQL-HikariCP%20Pool-blue.svg)
+![JavaFX](https://img.shields.io/badge/UI-JavaFX%2025-cyan.svg)
 ![Cryptography](https://img.shields.io/badge/Encryption-AES--256--GCM%20%2B%20ECDH%20PFS-green.svg)
 ![Protocol](https://img.shields.io/badge/Protocol-OFFICE--VPN--2.0-blueviolet.svg)
 ![License](https://img.shields.io/badge/License-MIT-purple.svg)
@@ -30,7 +31,7 @@ An application-level zero-trust encrypted intranet gateway and departmental acce
 | **Device Trust & Quotas** | **Implemented** | Fail-closed device trust check; atomic auto-enrollment up to 3 devices per user in a single database transaction. |
 | **Departmental Isolation** | **Implemented** | Role-based vaults (`FINANCE`, `HR`, `IT`, `HEADQUARTERS`) with canonical path confinement (`Path.toRealPath(NOFOLLOW_LINKS)`). |
 | **Audit Logging** | **Implemented** | Forward-linked HMAC-SHA256 audit chaining with CRLF log injection neutralization. |
-| **Administrative GUI** | **Implemented** | Java Swing dashboards for session monitoring, device governance, user lifecycle, and live telemetry. |
+| **Administrative & Client GUI** | **Implemented** | JavaFX 25 cyber-defense dark desktop dashboards (`AdminDashboardApp` and `VpnClientApp`) with non-blocking async UX. |
 | *Kernel TUN/TAP Driver* | *Future Scope* | Native OS virtual network adapter (`wintun.sys` / `/dev/net/tun`) for capturing full OS-level IP packets. |
 | *OS Firewall & Route Hooking* | *Future Scope* | System routing table manipulation (`route add`) and firewall automation via platform APIs. |
 
@@ -77,10 +78,10 @@ Client                                                              Server
 
 - **Platform:** Java 25 LTS (OpenJDK 25)
 - **Build System:** Apache Maven 3.9+
-- **Database:** SQLite JDBC 3.53.2.1 in WAL (Write-Ahead Logging) mode
+- **Database:** MySQL / MariaDB via `mysql-connector-j` 9.6.0 & HikariCP 7.1.0 connection pooling
 - **Logging:** SLF4J 2.0.16 with `slf4j-simple`
 - **Security:** Standard Java Cryptography Architecture (`java.security`, `javax.crypto`)
-- **UI Framework:** Java Swing with `UiSafe` sanitization
+- **UI Framework:** JavaFX 25 (`javafx-controls`, `javafx-graphics`, `javafx-base`) with `officevpn-theme.css` & `UiSafe` sanitization
 
 ---
 
@@ -89,26 +90,30 @@ Client                                                              Server
 ### Prerequisites
 - JDK 25 LTS installed and on `PATH`
 - Apache Maven 3.9+
+- Running MySQL 8+ or MariaDB 10.4+ instance (auto-creates `office_vpn` schema; configure credentials in `src/main/resources/config.properties` or via `-Dofficevpn.db.*` / `OFFICEVPN_DB_*` environment variables)
 
 ### Build Shaded Executable JARs
 ```bash
-mvn clean package -Pstrict -Djava.awt.headless=true
+mvn clean verify -Pstrict -Djava.awt.headless=true
 ```
-This produces two self-contained executable JARs in `target/`:
+*(In Windows PowerShell, quote `-D` flags: `mvn clean verify -Pstrict "-Djava.awt.headless=true"`.)*
+This produces two self-contained executable JavaFX + MySQL JARs in `target/`:
 - `target/office-vpn-server.jar`
 - `target/office-vpn-client.jar`
 
 The strict profile compiles with `-Xlint:all -Werror` to guarantee zero compiler warnings.
 
-### First-Run Administrator Setup
-On first startup with a fresh database (`office_vpn.db`), the server detects the absence of active administrative credentials and launches the **Administrator Bootstrap Setup**:
-1. Run `java -jar target/office-vpn-server.jar`.
-2. Enter the administrator username and a strong passphrase meeting policy requirements (min 12 characters with upper, lower, numeric, and symbol chars).
-3. The server securely stores the server identity private key encrypted using the administrator's keystore passphrase provided via `OFFICEVPN_KEYSTORE_PASS` or the interactive prompt.
+### First-Run Administrator Setup & Running Apps
+On first startup with a fresh MySQL database (`office_vpn`), the server initializes InnoDB tables + append-only `audit_logs` triggers and launches the **Administrator Bootstrap Setup**:
+1. Start MySQL / MariaDB on `127.0.0.1:3306` (default `db.user=root`, empty `db.password`, or override in `config.properties`).
+2. Launch the **Admin Gateway Suite**: `java -jar target/office-vpn-server.jar`
+3. Launch the **VPN Client Portal**: `java -jar target/office-vpn-client.jar`
+4. Enter the administrator username and a strong passphrase meeting policy requirements (min 12 characters with upper, lower, numeric, and symbol chars).
+5. Unlock or create the server PKCS#12 identity keystore via `OFFICEVPN_KEYSTORE_PASS` or the interactive dialog.
 
-> **Testing / Grading Demo Mode:** To run in headless demo mode with ephemeral random credentials for grading or automated testing:
+> **Testing / Grading Demo Mode:** To auto-seed deterministic demo accounts (`admin_hq`, `alice_fin`, `bob_hr`, `charlie_it`, `david_auditor`):
 > ```bash
-> java -Dofficevpn.demo=true -jar target/office-vpn-server.jar
+> java "-Dofficevpn.demo=true" -jar target/office-vpn-server.jar
 > ```
 
 ---
@@ -130,8 +135,8 @@ office-vpn-system/
         |   |-- admin/              # User lifecycle, onboarding, offboarding, alerts, metrics, server control
         |   |-- client/             # Client engine, auto-reconnect, TOFU policies, console client
         |   |-- config/             # Central configuration utilities
-        |   |-- db/                 # SQLite connection management, migrations, audit trail
-        |   |-- gui/                # Swing desktop dashboards (Admin and Client)
+        |   |-- db/                 # MySQL HikariCP connection pooling, schema init, audit trail
+        |   |-- gui/                # JavaFX desktop cyber-defense dashboards (Admin and Client)
         |   |-- model/              # Immutable domain models and records
         |   |-- network/            # Bandwidth limiter, DNS leak guard, site-to-site tunnels
         |   |-- protocol/           # Binary wire packet framing, anti-replay sliding window
@@ -140,7 +145,9 @@ office-vpn-system/
         |   |-- storage/            # Department file vaults with atomic writes and path traversal defense
         |   `-- tunnel/             # Split tunneling and full tunneling engines
         `-- resources/
-            `-- config.properties   # Production runtime configuration
+            |-- config.properties   # Production runtime & MySQL configuration
+            `-- styles/
+                `-- officevpn-theme.css # JavaFX enterprise dark cyber-defense CSS theme
 ```
 
 ---

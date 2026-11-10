@@ -2,70 +2,129 @@ package com.officevpn.gui.admin;
 
 import com.officevpn.admin.AdminBootstrap;
 import com.officevpn.admin.DemoSeeder;
+import com.officevpn.config.ConfigUtil;
 import com.officevpn.db.DatabaseManager;
+import com.officevpn.gui.UiSafe;
+import com.officevpn.model.AuditVerifyResult;
 import com.officevpn.model.UserAccount;
+import com.officevpn.security.ServerIdentity;
+import com.officevpn.server.VpnGatewayServer;
+import com.officevpn.server.VpnServer;
+import com.officevpn.storage.VaultManager;
+import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.stage.Stage;
 
-import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
 import java.awt.GraphicsEnvironment;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 /**
- * Entry point for launching the Headquarters VPN Gateway Central Admin Dashboard.
+ * Office VPN Headquarters Gateway &amp; Admin Governance Launcher.
+ * <p>
+ * Automatically delegates to headless console mode ({@link VpnServer}) when running without
+ * a graphical display, and otherwise boots the JavaFX Enterprise Governance Suite.
  */
 public final class AdminDashboardApp {
 
+    private AdminDashboardApp() {}
+
     public static void main(String[] args) {
-        if (GraphicsEnvironment.isHeadless()) {
-            com.officevpn.server.VpnServer.main(args);
+        if (GraphicsEnvironment.isHeadless() || Boolean.getBoolean("java.awt.headless")) {
+            VpnServer.main(args);
             return;
         }
+        Application.launch(AdminFxApplication.class, args);
+    }
 
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception ignored) {
-        }
+    public static final class AdminFxApplication extends Application {
 
-        DatabaseManager db = new DatabaseManager();
+        private DatabaseManager db;
+        private VpnGatewayServer gatewayServer;
+        private AdminDashboardFrame dashboard;
 
-        final List<DemoSeeder.DemoAccount> seededAccounts = DemoSeeder.isDemoEnabled()
-                ? DemoSeeder.seed(db)
-                : java.util.Collections.emptyList();
-
-        if (!seededAccounts.isEmpty()) {
-            System.out.println("========================================================================");
-            System.out.println("       DEMO MODE INITIALIZED - EPHEMERAL TEST CREDENTIALS               ");
-            System.out.println("========================================================================");
-            for (DemoSeeder.DemoAccount acc : seededAccounts) {
-                System.out.printf("  Username: %-15s Password: %-18s Dept: %-12s Role: %s%n",
-                        acc.username(), acc.password(), acc.department(), acc.role());
+        @Override
+        public void start(Stage primaryStage) {
+            Platform.setImplicitExit(false);
+            try {
+                db = new DatabaseManager();
+            } catch (Exception ex) {
+                UiSafe.showError(null, "MySQL Initialization Failed",
+                        "Unable to initialize MySQL persistence (" + ConfigUtil.getDbUrl() + ").\n\n"
+                                + "Ensure MySQL / MariaDB is running and credentials in config.properties are valid.\n\nDetails: "
+                                + ex.getMessage());
+                Platform.exit();
+                return;
             }
-            System.out.println("========================================================================");
-        }
 
-        SwingUtilities.invokeLater(() -> {
-            if (AdminBootstrap.needsBootstrap(db)) {
-                AdminBootstrapDialog bootstrapDialog = new AdminBootstrapDialog(null, db);
-                bootstrapDialog.setVisible(true);
-                if (!bootstrapDialog.isBootstrapped()) {
-                    bootstrapDialog.dispose();
-                    db.close();
+            CompletableFuture<AuditVerifyResult> verifyFuture = db.startBackgroundVerify();
+
+            List<DemoSeeder.DemoAccount> seededDemoAccounts = List.of();
+            if (DemoSeeder.isDemoEnabled()) {
+                seededDemoAccounts = DemoSeeder.seed(db);
+                System.out.println("=== OFFICE VPN DEMO ACCOUNTS SEEDED ===");
+                for (DemoSeeder.DemoAccount acc : seededDemoAccounts) {
+                    System.out.printf("  %-14s | %-12s | %-8s | Password: %s%n",
+                            acc.username(), acc.department(), acc.role(), acc.password());
+                }
+            } else if (AdminBootstrap.needsBootstrap(db)) {
+                Optional<UserAccount> bootstrapped = AdminBootstrapDialog.showSetupDialog(null, db);
+                if (bootstrapped.isEmpty()) {
+                    closeQuietly();
+                    Platform.exit();
                     return;
                 }
             }
 
-            AdminLoginDialog loginDialog = new AdminLoginDialog(null, db);
-            loginDialog.setVisible(true);
-            UserAccount loggedInAdmin = loginDialog.getAuthenticatedUser();
-            if (loggedInAdmin == null) {
-                loginDialog.dispose();
-                db.close();
+            Optional<UserAccount> loggedIn = AdminLoginDialog.showLoginDialog(null, db, seededDemoAccounts);
+            if (loggedIn.isEmpty()) {
+                closeQuietly();
+                Platform.exit();
                 return;
             }
 
-            AdminDashboardFrame adminFrame = new AdminDashboardFrame(db, loggedInAdmin.username());
-            adminFrame.displayDemoCredentials(seededAccounts);
-            adminFrame.setVisible(true);
-        });
+            Optional<ServerIdentity> identityOpt = AdminIdentityDialog.resolveIdentity(null, Path.of("server_data"));
+            if (identityOpt.isEmpty()) {
+                closeQuietly();
+                Platform.exit();
+                return;
+            }
+
+            VaultManager vault = new VaultManager(Path.of("server_vaults"));
+            gatewayServer = new VpnGatewayServer(db, vault, identityOpt.get());
+
+            int port = ConfigUtil.getPort();
+            try {
+                gatewayServer.start(port);
+            } catch (Exception startEx) {
+                UiSafe.showWarning(null, "Gateway Start Warning",
+                        "Dashboard launched, but failed to bind gateway on port " + port + ":\n" + startEx.getMessage()
+                                + "\n\nYou can start or reconfigure the port from the Configuration tab.");
+            }
+
+            Platform.setImplicitExit(true);
+            dashboard = new AdminDashboardFrame(primaryStage, db, gatewayServer, loggedIn.get().username(), verifyFuture);
+            dashboard.show();
+        }
+
+        @Override
+        public void stop() {
+            if (dashboard != null) {
+                dashboard.shutdown();
+            } else {
+                closeQuietly();
+            }
+        }
+
+        private void closeQuietly() {
+            if (gatewayServer != null) {
+                try { gatewayServer.stop(); } catch (Exception ignored) {}
+            }
+            if (db != null) {
+                try { db.close(); } catch (Exception ignored) {}
+            }
+        }
     }
 }

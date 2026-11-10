@@ -6,7 +6,7 @@ import java.util.Locale;
 import java.util.Objects;
 
 /**
- * Pure non-Swing policy engine for evaluating Gateway Public Key Fingerprints and pinning decisions.
+ * Pure toolkit-independent policy engine for evaluating Gateway Public Key Fingerprints and pinning decisions.
  */
 public final class PinPolicy {
 

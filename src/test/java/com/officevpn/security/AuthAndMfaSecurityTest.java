@@ -21,11 +21,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AuthAndMfaSecurityTest {
 
+    private static String newH2MySqlUrl(String prefix) {
+        return "jdbc:h2:mem:" + prefix + "_" + UUID.randomUUID().toString().replace("-", "")
+                + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1";
+    }
+
     @Test
     @DisplayName("H1 Fix: Atomic authentication verifies both password and TOTP together")
     void testAtomicAuthenticationWithTotp(@TempDir Path tempDir) throws Exception {
-        String dbPath = tempDir.resolve("test_auth_mfa.db").toString();
-        try (DatabaseManager db = new DatabaseManager(dbPath)) {
+        String dbUrl = newH2MySqlUrl("auth_mfa");
+        try (DatabaseManager db = new DatabaseManager(dbUrl, new AuditKeyStore(tempDir))) {
             String username = "testuser_" + UUID.randomUUID().toString().substring(0, 8);
             char[] password = "Secure#Password2026!".toCharArray();
 
@@ -59,8 +64,8 @@ class AuthAndMfaSecurityTest {
     @Test
     @DisplayName("H1 Fix: Failed TOTP codes increment failure counter and trigger lockout without bypass")
     void testTotpFailuresTriggerLockout(@TempDir Path tempDir) throws Exception {
-        String dbPath = tempDir.resolve("test_lockout.db").toString();
-        try (DatabaseManager db = new DatabaseManager(dbPath)) {
+        String dbUrl = newH2MySqlUrl("lockout");
+        try (DatabaseManager db = new DatabaseManager(dbUrl, new AuditKeyStore(tempDir))) {
             String username = "lockout_user";
             char[] password = "Secure#Password2026!".toCharArray();
 
@@ -84,8 +89,8 @@ class AuthAndMfaSecurityTest {
     @Test
     @DisplayName("TOTP Replay Defense: Reusing the same TOTP window code is rejected")
     void testTotpStepReplayRejection(@TempDir Path tempDir) throws Exception {
-        String dbPath = tempDir.resolve("test_totp_replay.db").toString();
-        try (DatabaseManager db = new DatabaseManager(dbPath)) {
+        String dbUrl = newH2MySqlUrl("totp_replay");
+        try (DatabaseManager db = new DatabaseManager(dbUrl, new AuditKeyStore(tempDir))) {
             String username = "replay_user";
             char[] password = "Secure#Password2026!".toCharArray();
 
@@ -108,8 +113,8 @@ class AuthAndMfaSecurityTest {
     @Test
     @DisplayName("H2 Fix: Hardware device trust cap and fail-closed enforcement")
     void testHardwareDeviceTrustCap(@TempDir Path tempDir) throws Exception {
-        String dbPath = tempDir.resolve("test_devices.db").toString();
-        try (DatabaseManager db = new DatabaseManager(dbPath)) {
+        String dbUrl = newH2MySqlUrl("devices");
+        try (DatabaseManager db = new DatabaseManager(dbUrl, new AuditKeyStore(tempDir))) {
             String username = "device_user";
             char[] password = "Secure#Password2026!".toCharArray();
 

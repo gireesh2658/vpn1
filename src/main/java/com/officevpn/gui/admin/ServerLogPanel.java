@@ -1,143 +1,126 @@
 package com.officevpn.gui.admin;
 
 import com.officevpn.gui.UiSafe;
-import com.officevpn.protocol.VpnPacket;
-import com.officevpn.server.ServerEventListener;
-import com.officevpn.server.VpnGatewayServer;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
 
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
-import javax.swing.Timer;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Locale;
 
 /**
- * Live Server Event Log Panel for the Headquarters Admin Dashboard.
- * <p>
- * Subscribes to {@link ServerEventListener#onServerLog(String)} to display
- * timestamped lifecycle, diagnostic, and network gateway events.
- * Hardened with EDT protection, non-blocking queue coalescing (max 200/tick),
- * and HTML disablement.
+ * JavaFX Real-Time Bounded Gateway Log Console.
  */
-public final class ServerLogPanel extends JPanel implements ServerEventListener {
+public final class ServerLogPanel extends VBox {
 
-    private static final long serialVersionUID = 1L;
+    private static final int MAX_LOG_LINES = 1000;
+    private static final DateTimeFormatter TIME_FMT =
+            DateTimeFormatter.ofPattern("HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
 
-    public static final int MAX_DRAIN_PER_TICK = 200;
-    public static final int MAX_LINES = 500;
-
-    private final JTextArea logArea = new JTextArea();
-    private final JButton clearButton = new JButton("Clear Logs");
-    private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss");
-
-    private final transient Queue<String> logQueue = new ConcurrentLinkedQueue<>();
-    private final Timer drainTimer;
+    private final Deque<String> logBuffer = new ArrayDeque<>(MAX_LOG_LINES + 1);
+    private final TextField filterField = new TextField();
+    private final CheckBox autoScrollCheck = new CheckBox("Auto-Scroll");
+    private final Label countPill = new Label("0 Lines");
+    private final TextArea consoleArea = new TextArea();
 
     public ServerLogPanel() {
-        setLayout(new BorderLayout(5, 5));
-        setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        setSpacing(14);
+        setPadding(new Insets(18));
+        buildUi();
+    }
 
-        logArea.setEditable(false);
-        logArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        logArea.setBackground(new Color(248, 248, 252));
-        UiSafe.disableHtml(logArea);
+    private void buildUi() {
+        HBox header = new HBox(10);
+        header.setAlignment(Pos.CENTER_LEFT);
+        VBox titleBox = new VBox(2);
+        Label title = new Label("Gateway System Console");
+        title.getStyleClass().add("page-title");
+        Label subtitle = new Label("Live server lifecycle, TLS/ECDH handshake events, client routing, and error streams");
+        subtitle.getStyleClass().add("page-subtitle");
+        titleBox.getChildren().addAll(title, subtitle);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        countPill.getStyleClass().addAll("pill", "pill-muted");
+        header.getChildren().addAll(titleBox, spacer, countPill);
 
-        JScrollPane scrollPane = new JScrollPane(logArea);
-        scrollPane.setBorder(BorderFactory.createTitledBorder("Headquarters Gateway Event Log"));
-        add(scrollPane, BorderLayout.CENTER);
+        HBox toolbar = new HBox(10);
+        toolbar.setAlignment(Pos.CENTER_LEFT);
+        filterField.setPromptText("Filter console output...");
+        filterField.setPrefWidth(260);
+        filterField.textProperty().addListener((obs, o, n) -> rerenderConsole());
 
-        JPanel bottomBar = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        clearButton.addActionListener(e -> {
-            logQueue.clear();
-            logArea.setText("");
+        autoScrollCheck.setSelected(true);
+
+        Button copyBtn = new Button("Copy All");
+        copyBtn.getStyleClass().add("btn-secondary");
+        copyBtn.setOnAction(e -> UiSafe.copyToClipboard(consoleArea.getText()));
+
+        Button clearBtn = new Button("Clear Console");
+        clearBtn.getStyleClass().add("btn-danger");
+        clearBtn.setOnAction(e -> {
+            logBuffer.clear();
+            consoleArea.clear();
+            countPill.setText("0 Lines");
         });
-        bottomBar.add(clearButton);
-        add(bottomBar, BorderLayout.SOUTH);
 
-        // 250 ms coalescing timer for EDT protection
-        this.drainTimer = new Timer(250, e -> drainLogQueue(MAX_DRAIN_PER_TICK));
-        this.drainTimer.start();
+        Region tbSpacer = new Region();
+        HBox.setHgrow(tbSpacer, Priority.ALWAYS);
+        toolbar.getChildren().addAll(filterField, autoScrollCheck, tbSpacer, copyBtn, clearBtn);
+
+        consoleArea.setEditable(false);
+        consoleArea.setWrapText(false);
+        consoleArea.getStyleClass().add("console-area");
+        VBox.setVgrow(consoleArea, Priority.ALWAYS);
+
+        VBox card = new VBox(12, toolbar, consoleArea);
+        card.getStyleClass().add("card");
+        VBox.setVgrow(card, Priority.ALWAYS);
+
+        getChildren().addAll(header, card);
     }
 
-    public int drainLogQueue(int maxDrain) {
-        int drained = 0;
+    public void appendLog(String rawLine) {
+        String safe = UiSafe.text(rawLine, 512);
+        String line = "[" + TIME_FMT.format(Instant.now()) + "] " + safe;
+        UiSafe.runOnFxThread(() -> {
+            if (logBuffer.size() >= MAX_LOG_LINES) {
+                logBuffer.removeFirst();
+            }
+            logBuffer.addLast(line);
+            countPill.setText(logBuffer.size() + " Lines");
+            String filter = filterField.getText() != null ? filterField.getText().trim().toLowerCase(Locale.ROOT) : "";
+            if (filter.isEmpty() || line.toLowerCase(Locale.ROOT).contains(filter)) {
+                consoleArea.appendText(line + "\n");
+                if (autoScrollCheck.isSelected()) {
+                    consoleArea.positionCaret(consoleArea.getLength());
+                }
+            }
+        });
+    }
+
+    private void rerenderConsole() {
+        String filter = filterField.getText() != null ? filterField.getText().trim().toLowerCase(Locale.ROOT) : "";
         StringBuilder sb = new StringBuilder();
-        while (drained < maxDrain && !logQueue.isEmpty()) {
-            String line = logQueue.poll();
-            if (line != null) {
-                sb.append(line).append("\n");
-                drained++;
+        for (String line : logBuffer) {
+            if (filter.isEmpty() || line.toLowerCase(Locale.ROOT).contains(filter)) {
+                sb.append(line).append('\n');
             }
         }
-        if (drained > 0) {
-            logArea.append(sb.toString());
-            if (logArea.getLineCount() > MAX_LINES + 1) {
-                try {
-                    int excess = logArea.getLineCount() - (MAX_LINES + 1);
-                    int end = logArea.getLineEndOffset(excess);
-                    logArea.replaceRange("", 0, end);
-                } catch (Exception ignored) {}
-            }
-            logArea.setCaretPosition(logArea.getDocument().getLength());
+        consoleArea.setText(sb.toString());
+        if (autoScrollCheck.isSelected()) {
+            consoleArea.positionCaret(consoleArea.getLength());
         }
-        return drained;
-    }
-
-    // Test seam
-    public Queue<String> getLogQueue() {
-        return logQueue;
-    }
-
-    // Test seam
-    public JTextArea getLogArea() {
-        return logArea;
-    }
-
-    public void bindToServer(VpnGatewayServer server) {
-        if (server != null) {
-            server.addServerEventListener(this);
-        }
-    }
-
-    public void unbindFromServer(VpnGatewayServer server) {
-        if (server != null) {
-            server.removeServerEventListener(this);
-        }
-    }
-
-    @Override
-    public void onServerLog(String message) {
-        if (message == null) return;
-        String time = timeFormat.format(new Date());
-        logQueue.offer("[" + time + "] " + UiSafe.text(message, 512));
-    }
-
-    @Override
-    public void onPacketSniffed(VpnPacket rawPacket, String direction) {
-        // Handled in PacketMonitorPanel
-    }
-
-    @Override
-    public void onSessionUpdated() {
-        // Handled in ConnectedClientsPanel
-    }
-
-    @Override
-    public void onChatBroadcast(String senderUser, String senderDept, String senderVip, String message) {
-        onServerLog(String.format("[CHAT BROADCAST] [%s@%s (%s)]: %s",
-                UiSafe.text(senderUser, 64),
-                UiSafe.text(senderVip, 32),
-                UiSafe.text(senderDept, 32),
-                UiSafe.text(message, 512)));
     }
 }
-

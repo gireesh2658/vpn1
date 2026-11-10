@@ -1,144 +1,181 @@
 package com.officevpn.gui.admin;
 
 import com.officevpn.admin.AdminLoginPolicy;
+import com.officevpn.admin.DemoSeeder;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.gui.UiSafe;
+import com.officevpn.model.Role;
 import com.officevpn.model.UserAccount;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.PasswordField;
+import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
+import javafx.stage.Window;
 
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JDialog;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JPasswordField;
-import javax.swing.JTextField;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
 import java.util.Arrays;
-import java.util.Objects;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 /**
- * Authentication modal dialog requiring valid Headquarters Administrator credentials
- * before granting access to the Admin Dashboard.
+ * JavaFX Headquarters Administrator Authentication Dialog.
+ * Runs 600,000-iteration PBKDF2 authentication asynchronously to keep the UI responsive.
  */
-public final class AdminLoginDialog extends JDialog {
+public final class AdminLoginDialog {
 
-    private static final long serialVersionUID = 1L;
+    private AdminLoginDialog() {}
 
-    private static final int MAX_FAILED_ATTEMPTS = 5;
-
-    private final transient DatabaseManager databaseManager;
-    private final JTextField usernameField = new JTextField(20);
-    private final JPasswordField passwordField = new JPasswordField(20);
-
-    private int failedAttempts = 0;
-    private transient UserAccount authenticatedUser = null;
-
-    public AdminLoginDialog(JFrame parent, DatabaseManager databaseManager) {
-        super(parent, "Headquarters Admin Authentication", true);
-        this.databaseManager = Objects.requireNonNull(databaseManager, "DatabaseManager cannot be null");
-
-        setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
-        setResizable(false);
-
-        JPanel content = new JPanel(new BorderLayout(12, 12));
-        content.setBorder(BorderFactory.createEmptyBorder(16, 20, 16, 20));
-
-        // Header
-        JPanel headerPanel = new JPanel(new BorderLayout(4, 4));
-        JLabel titleLabel = new JLabel("Administrator Login");
-        titleLabel.setFont(new Font("SansSerif", Font.BOLD, 16));
-        titleLabel.setForeground(new Color(25, 75, 150));
-
-        JLabel infoLabel = new JLabel("<html>Central Gateway Dashboard access is restricted to authorized<br>" +
-                "Headquarters Administrators. Enter your credentials to proceed.</html>");
-        infoLabel.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        infoLabel.setForeground(Color.DARK_GRAY);
-
-        headerPanel.add(titleLabel, BorderLayout.NORTH);
-        headerPanel.add(infoLabel, BorderLayout.CENTER);
-        content.add(headerPanel, BorderLayout.NORTH);
-
-        // Form
-        JPanel formPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(6, 6, 6, 6);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-
-        gbc.gridx = 0; gbc.gridy = 0;
-        formPanel.add(new JLabel("Username:"), gbc);
-        gbc.gridx = 1;
-        formPanel.add(usernameField, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 1;
-        formPanel.add(new JLabel("Password:"), gbc);
-        gbc.gridx = 1;
-        formPanel.add(passwordField, gbc);
-
-        content.add(formPanel, BorderLayout.CENTER);
-
-        // Buttons
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-        JButton loginButton = new JButton("Authenticate");
-        loginButton.setFont(new Font("SansSerif", Font.BOLD, 12));
-        loginButton.addActionListener(e -> attemptLogin());
-        getRootPane().setDefaultButton(loginButton);
-
-        JButton cancelButton = new JButton("Cancel");
-        cancelButton.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        cancelButton.addActionListener(e -> dispose());
-
-        buttonPanel.add(cancelButton);
-        buttonPanel.add(loginButton);
-        content.add(buttonPanel, BorderLayout.SOUTH);
-
-        getContentPane().add(content);
-        pack();
-        setLocationRelativeTo(parent);
-    }
-
-    private void attemptLogin() {
-        String username = usernameField.getText().trim();
-        char[] pw = passwordField.getPassword();
-
-        try {
-            UserAccount account = AdminLoginPolicy.authenticateAdmin(databaseManager, username, pw, "local");
-            if (account != null) {
-                this.authenticatedUser = account;
-                dispose();
-            } else {
-                failedAttempts++;
-                int remaining = MAX_FAILED_ATTEMPTS - failedAttempts;
-                if (remaining <= 0) {
-                    UiSafe.showMessageDialog(this,
-                            "Maximum login attempts exceeded. Application terminating.",
-                            "Access Denied",
-                            JOptionPane.ERROR_MESSAGE);
-                    dispose();
-                    return;
-                } else {
-                    UiSafe.showMessageDialog(this,
-                            "Authentication failed. " + remaining + " attempt(s) remaining.",
-                            "Invalid Credentials",
-                            JOptionPane.WARNING_MESSAGE);
-                }
-            }
-        } finally {
-            Arrays.fill(pw, '\0');
-            passwordField.setText("");
+    public static Optional<UserAccount> showLoginDialog(
+            Window owner,
+            DatabaseManager db,
+            List<DemoSeeder.DemoAccount> seededDemoAccounts
+    ) {
+        Stage stage = new Stage();
+        if (owner != null) {
+            stage.initOwner(owner);
+            stage.initModality(Modality.WINDOW_MODAL);
+        } else {
+            stage.initModality(Modality.APPLICATION_MODAL);
         }
-    }
+        stage.setTitle("Office VPN — Headquarters Administrator Login");
+        stage.setResizable(false);
 
-    public UserAccount getAuthenticatedUser() {
-        return authenticatedUser;
+        Label title = new Label("Gateway Governance Sign-In");
+        title.getStyleClass().add("page-title");
+
+        Label subtitle = new Label("Authenticate with a Headquarters ADMIN account backed by MySQL.");
+        subtitle.getStyleClass().add("page-subtitle");
+        subtitle.setWrapText(true);
+
+        TextField userField = new TextField();
+        userField.setPromptText("e.g. admin_hq");
+
+        PasswordField passField = new PasswordField();
+        passField.setPromptText("Administrator passphrase");
+
+        Label errorLabel = new Label("");
+        errorLabel.setStyle("-fx-text-fill: #f87171; -fx-font-weight: bold;");
+        errorLabel.setWrapText(true);
+
+        VBox root = new VBox(14);
+        root.getStyleClass().add("app-root");
+        root.setPadding(new Insets(22));
+        root.setPrefWidth(490);
+
+        VBox demoBanner = null;
+        if (seededDemoAccounts != null && !seededDemoAccounts.isEmpty()) {
+            Label demoHdr = new Label("DEMO MODE ACTIVE — Seeded Test Credentials");
+            demoHdr.getStyleClass().addAll("pill", "pill-warning");
+
+            StringBuilder sb = new StringBuilder();
+            DemoSeeder.DemoAccount adminAccount = null;
+            for (DemoSeeder.DemoAccount acc : seededDemoAccounts) {
+                if (acc.role() == Role.ADMIN && adminAccount == null) {
+                    adminAccount = acc;
+                }
+                sb.append(String.format("%-15s | %-12s | %-8s | %s%n",
+                        acc.username(), acc.department(), acc.role(), acc.password()));
+            }
+            TextArea credsBox = new TextArea(sb.toString());
+            credsBox.setEditable(false);
+            credsBox.getStyleClass().add("console-area");
+            credsBox.setPrefRowCount(Math.min(6, seededDemoAccounts.size() + 1));
+
+            Button fillBtn = new Button("Auto-Fill HQ Admin");
+            fillBtn.getStyleClass().add("btn-secondary");
+            final DemoSeeder.DemoAccount finalAdmin = adminAccount;
+            fillBtn.setOnAction(e -> {
+                if (finalAdmin != null) {
+                    userField.setText(finalAdmin.username());
+                    passField.setText(finalAdmin.password());
+                }
+            });
+
+            demoBanner = new VBox(8, demoHdr, credsBox, fillBtn);
+            demoBanner.getStyleClass().add("card");
+        }
+
+        Button cancelBtn = new Button("Exit");
+        cancelBtn.getStyleClass().add("btn-secondary");
+
+        Button loginBtn = new Button("Authenticate & Launch");
+        loginBtn.getStyleClass().add("btn-primary");
+        loginBtn.setDefaultButton(true);
+
+        final UserAccount[] authenticatedRef = new UserAccount[1];
+
+        cancelBtn.setOnAction(e -> stage.close());
+
+        loginBtn.setOnAction(e -> {
+            String uname = userField.getText() != null ? userField.getText().trim() : "";
+            char[] pw = passField.getText().toCharArray();
+            if (uname.isEmpty() || pw.length == 0) {
+                Arrays.fill(pw, '\0');
+                errorLabel.setText("Username and passphrase are required.");
+                return;
+            }
+
+            errorLabel.setText("");
+            loginBtn.setDisable(true);
+            cancelBtn.setDisable(true);
+            loginBtn.setText("Verifying (PBKDF2)...");
+
+            CompletableFuture.supplyAsync(() -> {
+                try {
+                    return AdminLoginPolicy.authenticateAdmin(db, uname, pw, "local");
+                } finally {
+                    Arrays.fill(pw, '\0');
+                }
+            }).whenComplete((account, err) -> Platform.runLater(() -> {
+                loginBtn.setDisable(false);
+                cancelBtn.setDisable(false);
+                loginBtn.setText("Authenticate & Launch");
+                if (err != null) {
+                    Throwable cause = err.getCause() != null ? err.getCause() : err;
+                    errorLabel.setText("Authentication error: " + cause.getMessage());
+                    passField.clear();
+                } else if (account == null) {
+                    errorLabel.setText("Invalid credentials, account locked, or insufficient Headquarters ADMIN privilege.");
+                    passField.clear();
+                } else {
+                    authenticatedRef[0] = account;
+                    stage.close();
+                }
+            }));
+        });
+
+        HBox actions = new HBox(10);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        actions.getChildren().addAll(spacer, cancelBtn, loginBtn);
+
+        VBox formCard = new VBox(10,
+                new Label("Administrator Username"), userField,
+                new Label("Passphrase"), passField,
+                errorLabel
+        );
+        formCard.getStyleClass().add("card");
+
+        root.getChildren().addAll(title, subtitle);
+        if (demoBanner != null) {
+            root.getChildren().add(demoBanner);
+        }
+        root.getChildren().addAll(formCard, actions);
+
+        Scene scene = new Scene(root);
+        UiSafe.applyTheme(scene);
+        stage.setScene(scene);
+        stage.showAndWait();
+        return Optional.ofNullable(authenticatedRef[0]);
     }
 }
-
-

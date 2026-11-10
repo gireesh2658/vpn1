@@ -10,7 +10,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -56,7 +55,7 @@ public final class AuditService {
 
         List<Object> params = new ArrayList<>();
         if (username != null && !username.isBlank()) {
-            sql.append("AND username = ? COLLATE NOCASE ");
+            sql.append("AND LOWER(username) = LOWER(?) ");
             params.add(username.trim());
         }
         if (eventType != null && !eventType.isBlank()) {
@@ -73,7 +72,7 @@ public final class AuditService {
         }
         sql.append("ORDER BY id DESC");
 
-        try (Connection conn = DriverManager.getConnection(databaseManager.getJdbcUrl());
+        try (Connection conn = databaseManager.openConnection();
              PreparedStatement ps = conn.prepareStatement(sql.toString())) {
             for (int i = 0; i < params.size(); i++) {
                 ps.setObject(i + 1, params.get(i));

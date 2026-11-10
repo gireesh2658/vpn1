@@ -1,139 +1,180 @@
 package com.officevpn.gui.admin;
 
 import com.officevpn.admin.AdminBootstrap;
+import com.officevpn.admin.PasswordPolicy;
+import com.officevpn.admin.UsernamePolicy;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.gui.UiSafe;
+import com.officevpn.model.UserAccount;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.PasswordField;
+import javafx.scene.control.ProgressBar;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
+import javafx.stage.Window;
 
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JDialog;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JPasswordField;
-import javax.swing.JTextField;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
 import java.util.Arrays;
-import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 /**
- * First-run bootstrap modal dialog for provisioning the initial Headquarters Administrator.
+ * First-run JavaFX Administrator Bootstrap Setup wizard.
+ * Enforces {@link UsernamePolicy} and {@link PasswordPolicy} with live strength feedback.
  */
-public final class AdminBootstrapDialog extends JDialog {
+public final class AdminBootstrapDialog {
 
-    private static final long serialVersionUID = 1L;
+    private AdminBootstrapDialog() {}
 
-    private final transient DatabaseManager databaseManager;
-    private final JTextField usernameField = new JTextField("admin_hq", 20);
-    private final JPasswordField passwordField = new JPasswordField(20);
-    private final JPasswordField confirmPasswordField = new JPasswordField(20);
+    public static Optional<UserAccount> showSetupDialog(Window owner, DatabaseManager db) {
+        Stage stage = new Stage();
+        if (owner != null) {
+            stage.initOwner(owner);
+            stage.initModality(Modality.WINDOW_MODAL);
+        } else {
+            stage.initModality(Modality.APPLICATION_MODAL);
+        }
+        stage.setTitle("Office VPN — Initial Administrator Setup");
+        stage.setResizable(false);
 
-    private boolean bootstrapped = false;
+        Label header = new Label("First-Run Headquarters Bootstrap");
+        header.getStyleClass().add("page-title");
 
-    public AdminBootstrapDialog(JFrame parent, DatabaseManager databaseManager) {
-        super(parent, "Initial System Bootstrap - Create Headquarters Administrator", true);
-        this.databaseManager = Objects.requireNonNull(databaseManager, "DatabaseManager cannot be null");
+        Label sub = new Label("No active Headquarters Administrator exists in MySQL. Create the root governance account to initialize the gateway.");
+        sub.getStyleClass().add("page-subtitle");
+        sub.setWrapText(true);
 
-        setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
-        setResizable(false);
+        TextField userField = new TextField("admin_hq");
+        userField.setPromptText("Administrator username (3-32 chars)");
 
-        JPanel content = new JPanel(new BorderLayout(12, 12));
-        content.setBorder(BorderFactory.createEmptyBorder(16, 20, 16, 20));
+        PasswordField passField = new PasswordField();
+        passField.setPromptText("Minimum 12 chars: upper, lower, number, symbol");
 
-        // Header
-        JPanel headerPanel = new JPanel(new BorderLayout(4, 4));
-        JLabel titleLabel = new JLabel("First-Run Administrator Setup");
-        titleLabel.setFont(new Font("SansSerif", Font.BOLD, 16));
-        titleLabel.setForeground(new Color(25, 75, 150));
+        PasswordField confirmField = new PasswordField();
+        confirmField.setPromptText("Confirm passphrase");
 
-        JLabel infoLabel = new JLabel("<html>No active Headquarters Administrator exists. Configure the primary<br>" +
-                "administrator account to initialize the VPN Gateway. Password must be 12-128 characters.</html>");
-        infoLabel.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        infoLabel.setForeground(Color.DARK_GRAY);
+        ProgressBar strengthBar = new ProgressBar(0);
+        strengthBar.setMaxWidth(Double.MAX_VALUE);
+        strengthBar.setPrefHeight(7);
+        Label strengthLabel = new Label("Strength: Enter a 12+ character passphrase");
+        strengthLabel.getStyleClass().add("muted-label");
 
-        headerPanel.add(titleLabel, BorderLayout.NORTH);
-        headerPanel.add(infoLabel, BorderLayout.CENTER);
-        content.add(headerPanel, BorderLayout.NORTH);
+        Label errorLabel = new Label("");
+        errorLabel.setStyle("-fx-text-fill: #f87171; -fx-font-weight: bold;");
+        errorLabel.setWrapText(true);
 
-        // Form Fields
-        JPanel formPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(6, 6, 6, 6);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
+        passField.textProperty().addListener((obs, o, n) -> updateStrength(n, strengthBar, strengthLabel));
 
-        gbc.gridx = 0; gbc.gridy = 0;
-        formPanel.add(new JLabel("Admin Username:"), gbc);
-        gbc.gridx = 1;
-        formPanel.add(usernameField, gbc);
+        Button cancelBtn = new Button("Exit");
+        cancelBtn.getStyleClass().add("btn-secondary");
 
-        gbc.gridx = 0; gbc.gridy = 1;
-        formPanel.add(new JLabel("Password:"), gbc);
-        gbc.gridx = 1;
-        formPanel.add(passwordField, gbc);
+        Button createBtn = new Button("Create Administrator");
+        createBtn.getStyleClass().add("btn-primary");
+        createBtn.setDefaultButton(true);
 
-        gbc.gridx = 0; gbc.gridy = 2;
-        formPanel.add(new JLabel("Confirm Password:"), gbc);
-        gbc.gridx = 1;
-        formPanel.add(confirmPasswordField, gbc);
+        final UserAccount[] createdRef = new UserAccount[1];
 
-        content.add(formPanel, BorderLayout.CENTER);
+        cancelBtn.setOnAction(e -> stage.close());
 
-        // Buttons
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-        JButton createButton = new JButton("Create Administrator");
-        createButton.setFont(new Font("SansSerif", Font.BOLD, 12));
-        createButton.addActionListener(e -> attemptBootstrap());
+        createBtn.setOnAction(e -> {
+            String uname = userField.getText() != null ? userField.getText().trim() : "";
+            char[] pw = passField.getText().toCharArray();
+            char[] confirm = confirmField.getText().toCharArray();
 
-        JButton cancelButton = new JButton("Exit");
-        cancelButton.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        cancelButton.addActionListener(e -> dispose());
+            errorLabel.setText("");
+            try {
+                UsernamePolicy.validateUsername(uname);
+                PasswordPolicy.validatePassword(pw, uname);
+                if (!Arrays.equals(pw, confirm)) {
+                    throw new IllegalArgumentException("Passphrases do not match.");
+                }
+            } catch (IllegalArgumentException ex) {
+                Arrays.fill(pw, '\0');
+                Arrays.fill(confirm, '\0');
+                errorLabel.setText(ex.getMessage());
+                return;
+            }
 
-        buttonPanel.add(cancelButton);
-        buttonPanel.add(createButton);
-        content.add(buttonPanel, BorderLayout.SOUTH);
+            createBtn.setDisable(true);
+            cancelBtn.setDisable(true);
+            createBtn.setText("Provisioning (PBKDF2)...");
 
-        getContentPane().add(content);
-        pack();
-        setLocationRelativeTo(parent);
+            CompletableFuture.supplyAsync(() -> {
+                try {
+                    return AdminBootstrap.createInitialAdmin(db, uname, pw, confirm);
+                } finally {
+                    Arrays.fill(pw, '\0');
+                    Arrays.fill(confirm, '\0');
+                }
+            }).whenComplete((account, err) -> Platform.runLater(() -> {
+                createBtn.setDisable(false);
+                cancelBtn.setDisable(false);
+                createBtn.setText("Create Administrator");
+                if (err != null) {
+                    Throwable cause = err.getCause() != null ? err.getCause() : err;
+                    errorLabel.setText("Bootstrap failed: " + cause.getMessage());
+                } else {
+                    createdRef[0] = account;
+                    stage.close();
+                }
+            }));
+        });
+
+        HBox actions = new HBox(10);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        actions.getChildren().addAll(spacer, cancelBtn, createBtn);
+
+        VBox formCard = new VBox(10,
+                new Label("Administrator Username"), userField,
+                new Label("Master Passphrase"), passField,
+                strengthBar, strengthLabel,
+                new Label("Confirm Master Passphrase"), confirmField,
+                errorLabel
+        );
+        formCard.getStyleClass().add("card");
+
+        VBox root = new VBox(14, header, sub, formCard, actions);
+        root.getStyleClass().add("app-root");
+        root.setPadding(new Insets(22));
+        root.setPrefWidth(480);
+
+        Scene scene = new Scene(root);
+        UiSafe.applyTheme(scene);
+        stage.setScene(scene);
+        stage.showAndWait();
+        return Optional.ofNullable(createdRef[0]);
     }
 
-    private void attemptBootstrap() {
-        String username = usernameField.getText().trim();
-        char[] pw = passwordField.getPassword();
-        char[] confirm = confirmPasswordField.getPassword();
-
-        try {
-            AdminBootstrap.createInitialAdmin(databaseManager, username, pw, confirm);
-            this.bootstrapped = true;
-            UiSafe.showMessageDialog(this,
-                    "Headquarters Administrator '" + username + "' created successfully.",
-                    "Bootstrap Complete",
-                    JOptionPane.INFORMATION_MESSAGE);
-            dispose();
-        } catch (Exception ex) {
-            UiSafe.showMessageDialog(this,
-                    "Bootstrap failed: " + ex.getMessage(),
-                    "Validation Error",
-                    JOptionPane.ERROR_MESSAGE);
-        } finally {
-            Arrays.fill(pw, '\0');
-            Arrays.fill(confirm, '\0');
-            passwordField.setText("");
-            confirmPasswordField.setText("");
+    private static void updateStrength(String pw, ProgressBar bar, Label label) {
+        if (pw == null || pw.isEmpty()) {
+            bar.setProgress(0);
+            label.setText("Strength: Enter a 12+ character passphrase");
+            return;
+        }
+        int score = 0;
+        if (pw.length() >= 12) score++;
+        if (pw.length() >= 16) score++;
+        if (pw.chars().anyMatch(Character::isUpperCase)) score++;
+        if (pw.chars().anyMatch(Character::isLowerCase)) score++;
+        if (pw.chars().anyMatch(Character::isDigit)) score++;
+        if (pw.chars().anyMatch(c -> !Character.isLetterOrDigit(c))) score++;
+        double progress = Math.min(1.0, score / 6.0);
+        bar.setProgress(progress);
+        if (score <= 2) {
+            label.setText("Strength: Weak — must include upper, lower, digit & symbol (min 12 chars)");
+        } else if (score <= 4) {
+            label.setText("Strength: Fair — add complexity or length");
+        } else {
+            label.setText("Strength: Strong enterprise passphrase");
         }
     }
-
-    public boolean isBootstrapped() {
-        return bootstrapped;
-    }
-
 }
-
-

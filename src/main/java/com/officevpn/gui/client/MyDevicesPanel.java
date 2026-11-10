@@ -1,85 +1,83 @@
 package com.officevpn.gui.client;
 
 import com.officevpn.client.VpnClientEngine;
+import com.officevpn.config.ConfigUtil;
+import com.officevpn.gui.UiSafe;
+import com.officevpn.util.HardwareUtil;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.TableView;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
 
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTable;
-import javax.swing.table.DefaultTableModel;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 /**
- * Client Portal Panel displaying registered hardware device profiles and trust status.
+ * JavaFX Client Local Hardware Identity &amp; Zero-Trust Session Binding Panel.
  */
-public final class MyDevicesPanel extends JPanel {
+public final class MyDevicesPanel extends VBox {
 
-    private static final long serialVersionUID = 1L;
-    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-            .withZone(ZoneId.systemDefault());
+    public record IdentityPropertyRow(String attribute, String value, String trustBadge) {}
 
-    private final transient VpnClientEngine clientEngine;
-    private final DefaultTableModel tableModel;
-    private final JTable table;
-    private final JLabel headerLabel = new JLabel("Authorized Employee Devices");
+    private final VpnClientEngine engine;
+    private final TableView<IdentityPropertyRow> table = new TableView<>();
 
-    public MyDevicesPanel(VpnClientEngine clientEngine) {
-        super(new BorderLayout(10, 10));
-        this.clientEngine = clientEngine;
-        setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-
-        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
-        headerLabel.setFont(new Font("SansSerif", Font.BOLD, 14));
-        headerLabel.setForeground(new Color(25, 75, 150));
-        topPanel.add(headerLabel);
-
-        JButton refreshBtn = new JButton("Refresh Devices");
-        refreshBtn.addActionListener(e -> refreshDevices());
-        topPanel.add(refreshBtn);
-
-        add(topPanel, BorderLayout.NORTH);
-
-        String[] columns = {"Device Name / Model", "Hardware Fingerprint", "Trust Status", "Device Quota", "Last Telemetry"};
-        tableModel = new DefaultTableModel(columns, 0) {
-            @Override
-            public boolean isCellEditable(int row, int col) {
-                return false;
-            }
-        };
-
-        table = new JTable(tableModel);
-        table.setRowHeight(24);
-        com.officevpn.gui.UiSafe.configureSafeTable(table);
-        add(new JScrollPane(table), BorderLayout.CENTER);
-
-        refreshDevices();
+    public MyDevicesPanel(VpnClientEngine engine) {
+        this.engine = engine;
+        setSpacing(14);
+        setPadding(new Insets(18));
+        buildUi();
     }
 
-    public void refreshDevices() {
-        tableModel.setRowCount(0);
-        String devName = com.officevpn.util.HardwareUtil.getAuthenticDeviceName();
-        if (clientEngine != null && clientEngine.getUsername() != null && !clientEngine.getUsername().isBlank()) {
-            devName = devName + " [" + clientEngine.getUsername() + "]";
-        }
-        String fp = com.officevpn.util.HardwareUtil.getAuthenticHardwareFingerprint();
-        String timeStr = TIME_FORMAT.format(Instant.now());
+    private void buildUi() {
+        HBox header = new HBox(10);
+        header.setAlignment(Pos.CENTER_LEFT);
+        VBox titleBox = new VBox(2);
+        Label title = new Label("My Authorized Hardware & Zero-Trust Identity");
+        title.getStyleClass().add("page-title");
+        Label subtitle = new Label("Deterministic machine fingerprint derived from OS & network MAC metadata bound to this session");
+        subtitle.getStyleClass().add("page-subtitle");
+        titleBox.getChildren().addAll(title, subtitle);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        tableModel.addRow(new Object[]{
-                devName,
-                fp,
-                "TRUSTED / ACTIVE",
-                "2 Devices (Corporate Limit)",
-                timeStr
+        String fp = HardwareUtil.getAuthenticHardwareFingerprint();
+        Button copyFpBtn = new Button("Copy My Hardware Fingerprint");
+        copyFpBtn.getStyleClass().add("btn-primary");
+        copyFpBtn.setOnAction(e -> {
+            UiSafe.copyToClipboard(fp);
+            UiSafe.showInfo(UiSafe.windowOf(this), "Fingerprint Copied",
+                    "Copied authentic SHA-256 hardware fingerprint to clipboard:\n" + fp);
         });
+        header.getChildren().addAll(titleBox, spacer, copyFpBtn);
+
+        UiSafe.configureSafeTable(table);
+        table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("Security Attribute", IdentityPropertyRow::attribute, 225), 200, 245));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("Observed Value", IdentityPropertyRow::value, 510), 420, 0));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.badgeColumn("Verification Status", IdentityPropertyRow::trustBadge,
+                r -> "ENFORCED".equals(r.trustBadge()) || "ACTIVE".equals(r.trustBadge()) ? "pill-success" : "pill-info", 145), 130, 155));
+        VBox.setVgrow(table, Priority.ALWAYS);
+
+        List<IdentityPropertyRow> rows = List.of(
+                new IdentityPropertyRow("Authenticated Account", UiSafe.text(engine.getUsername(), 64), "ACTIVE"),
+                new IdentityPropertyRow("Assigned Department", engine.getDepartment() != null ? engine.getDepartment().name() : "-", "ENFORCED"),
+                new IdentityPropertyRow("Assigned Role", engine.getRole() != null ? engine.getRole().name() : "-", "ENFORCED"),
+                new IdentityPropertyRow("Virtual Tunnel IP", UiSafe.text(engine.getAssignedVirtualIp(), 32), "ACTIVE"),
+                new IdentityPropertyRow("Authentic Device Name", UiSafe.text(HardwareUtil.getAuthenticDeviceName(), 128), "VERIFIED"),
+                new IdentityPropertyRow("Hardware SHA-256 Fingerprint", fp, "VERIFIED"),
+                new IdentityPropertyRow("Account Device Enrollment Cap", ConfigUtil.getMaxDevicesPerUser() + " authorized hardware device(s)", "ENFORCED"),
+                new IdentityPropertyRow("Pinned Gateway Fingerprint", UiSafe.text(engine.getServerFingerprint(), 128), "TOFU PINNED")
+        );
+        table.getItems().setAll(rows);
+
+        VBox card = new VBox(12, table);
+        card.getStyleClass().add("card");
+        VBox.setVgrow(card, Priority.ALWAYS);
+
+        getChildren().addAll(header, card);
     }
 }
-
-

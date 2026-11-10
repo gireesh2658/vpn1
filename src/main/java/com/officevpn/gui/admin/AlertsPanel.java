@@ -2,175 +2,181 @@ package com.officevpn.gui.admin;
 
 import com.officevpn.admin.AlertManager;
 import com.officevpn.gui.UiSafe;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.TableView;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
 
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTable;
-import javax.swing.ListSelectionModel;
-import javax.swing.SwingWorker;
-import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.table.DefaultTableModel;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.FlowLayout;
-import java.awt.Font;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 /**
- * Headquarters Admin Dashboard Alerts &amp; Incident Response Panel.
+ * JavaFX Real-Time Security Incident &amp; Alert Triage Panel.
  */
-public final class AlertsPanel extends JPanel {
+public final class AlertsPanel extends VBox {
 
-    private static final long serialVersionUID = 1L;
-    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-            .withZone(ZoneId.systemDefault());
+    private static final DateTimeFormatter TS_FMT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
-    private final transient AlertManager alertManager;
-    private final DefaultTableModel tableModel;
-    private final JTable alertTable;
-    private final JLabel badgeLabel = new JLabel("Unread: 0");
+    private final AlertManager alertManager;
+    private final Runnable onAlertsChanged;
 
-    public AlertsPanel(AlertManager alertManager) {
-        super(new BorderLayout(8, 8));
+    private final CheckBox unreadOnlyCheck = new CheckBox("Unread Only");
+    private final ComboBox<String> severityFilter = new ComboBox<>();
+    private final Label summaryPill = new Label("0 Unread");
+    private final TableView<AlertManager.SystemAlert> table = new TableView<>();
+
+    public AlertsPanel(AlertManager alertManager, Runnable onAlertsChanged) {
         this.alertManager = alertManager;
-        setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-
-        // Top Banner / Controls
-        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
-        badgeLabel.setFont(new Font("SansSerif", Font.BOLD, 13));
-        badgeLabel.setForeground(new Color(180, 20, 20));
-        topPanel.add(badgeLabel);
-
-        JButton markReadBtn = new JButton("Mark as Read");
-        markReadBtn.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        markReadBtn.setForeground(new Color(15, 75, 160));
-        markReadBtn.addActionListener(e -> markSelectedAlertRead());
-        topPanel.add(markReadBtn);
-
-        JButton refreshBtn = new JButton("Refresh Alerts");
-        refreshBtn.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        refreshBtn.setForeground(new Color(15, 23, 42));
-        refreshBtn.addActionListener(e -> refreshAlerts());
-        topPanel.add(refreshBtn);
-
-        JButton clearOldBtn = new JButton("Clear Old (>30 Days)");
-        clearOldBtn.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        clearOldBtn.setForeground(new Color(180, 25, 25));
-        clearOldBtn.addActionListener(e -> clearOldAlerts());
-        topPanel.add(clearOldBtn);
-
-        add(topPanel, BorderLayout.NORTH);
-
-        // Table
-        String[] columns = {"ID", "Type", "Severity", "User / Subject", "Message", "Timestamp", "Read?"};
-        tableModel = new DefaultTableModel(columns, 0) {
-            @Override
-            public boolean isCellEditable(int row, int col) {
-                return false;
-            }
-        };
-
-        alertTable = new JTable(tableModel);
-        alertTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        alertTable.setRowHeight(22);
-        alertTable.setDefaultRenderer(Object.class, new AlertCellRenderer());
-
-        add(new JScrollPane(alertTable), BorderLayout.CENTER);
-        refreshAlerts();
+        this.onAlertsChanged = onAlertsChanged;
+        setSpacing(14);
+        setPadding(new Insets(18));
+        buildUi();
+        refresh();
     }
 
-    public void refreshAlerts() {
-        if (alertManager == null) return;
+    private void buildUi() {
+        HBox header = new HBox(10);
+        header.setAlignment(Pos.CENTER_LEFT);
+        VBox titleBox = new VBox(2);
+        Label title = new Label("Security Alerts & Incident Response");
+        title.getStyleClass().add("page-title");
+        Label subtitle = new Label("Brute-force detections, kill switch triggers, audit verification failures, and admin change notices");
+        subtitle.getStyleClass().add("page-subtitle");
+        titleBox.getChildren().addAll(title, subtitle);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        summaryPill.getStyleClass().addAll("pill", "pill-muted");
+        header.getChildren().addAll(titleBox, spacer, summaryPill);
 
-        SwingWorker<List<AlertManager.SystemAlert>, Void> worker = new SwingWorker<>() {
-            @Override
-            protected List<AlertManager.SystemAlert> doInBackground() {
-                return alertManager.getAllAlerts();
-            }
+        HBox toolbar = new HBox(10);
+        toolbar.setAlignment(Pos.CENTER_LEFT);
+        unreadOnlyCheck.setOnAction(e -> refresh());
 
-            @Override
-            protected void done() {
+        severityFilter.getItems().addAll("ALL SEVERITIES", "CRITICAL", "WARNING", "INFO");
+        severityFilter.getSelectionModel().selectFirst();
+        severityFilter.setOnAction(e -> refresh());
+
+        Button refreshBtn = new Button("Refresh");
+        refreshBtn.getStyleClass().add("btn-secondary");
+        refreshBtn.setOnAction(e -> refresh());
+
+        Button markSelectedBtn = new Button("Mark Read");
+        markSelectedBtn.getStyleClass().add("btn-primary");
+        markSelectedBtn.setDisable(true);
+        table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> markSelectedBtn.setDisable(sel == null));
+        markSelectedBtn.setOnAction(e -> {
+            AlertManager.SystemAlert sel = table.getSelectionModel().getSelectedItem();
+            if (sel == null) return;
+            CompletableFuture.runAsync(() -> alertManager.markAlertRead(sel.id()))
+                    .thenRun(() -> Platform.runLater(this::notifyRefresh));
+        });
+
+        Button markAllReadBtn = new Button("Mark All Read");
+        markAllReadBtn.getStyleClass().add("btn-secondary");
+        markAllReadBtn.setOnAction(e -> {
+            List<AlertManager.SystemAlert> items = List.copyOf(table.getItems());
+            CompletableFuture.runAsync(() -> items.stream().filter(a -> !a.isRead()).forEach(a -> alertManager.markAlertRead(a.id())))
+                    .thenRun(() -> Platform.runLater(this::notifyRefresh));
+        });
+
+        Button purgeBtn = new Button("Clear Old Alerts...");
+        purgeBtn.getStyleClass().add("btn-warning");
+        purgeBtn.setOnAction(e -> {
+            Optional<String> daysOpt = UiSafe.promptText(UiSafe.windowOf(this),
+                    "Purge Historical Alerts",
+                    "Delete alerts older than N days:",
+                    "Retention Days", "30");
+            daysOpt.ifPresent(s -> {
                 try {
-                    List<AlertManager.SystemAlert> alerts = get();
-                    tableModel.setRowCount(0);
-                    int unreadCount = 0;
-                    int criticalCount = 0;
-
-                    for (AlertManager.SystemAlert a : alerts) {
-                        if (!a.isRead()) {
-                            unreadCount++;
-                            if (a.severity() == AlertManager.AlertSeverity.CRITICAL) {
-                                criticalCount++;
-                            }
-                        }
-                        tableModel.addRow(new Object[]{
-                                a.id(),
-                                a.type().name(),
-                                a.severity().name(),
-                                a.username(),
-                                a.message(),
-                                TIME_FORMAT.format(Instant.ofEpochMilli(a.timestamp())),
-                                a.isRead() ? "READ" : "UNREAD"
-                        });
-                    }
-
-                    badgeLabel.setText(String.format("Unread Alerts: %d (Critical: %d)", unreadCount, criticalCount));
-                    badgeLabel.setForeground(criticalCount > 0 ? Color.RED : new Color(40, 100, 160));
-                } catch (Exception ignored) {}
-            }
-        };
-        worker.execute();
-    }
-
-    private void markSelectedAlertRead() {
-        int selected = alertTable.getSelectedRow();
-        if (selected < 0) {
-            UiSafe.showMessageDialog(this, "Please select an alert row to mark as read.", "No Selection", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        long id = ((Number) tableModel.getValueAt(selected, 0)).longValue();
-        alertManager.markAlertRead(id);
-        refreshAlerts();
-    }
-
-    private void clearOldAlerts() {
-        int cleared = alertManager.clearOldAlerts(30);
-        UiSafe.showMessageDialog(this, "Cleared " + cleared + " old alerts.", "Clear Alerts", JOptionPane.INFORMATION_MESSAGE);
-        refreshAlerts();
-    }
-
-    private static class AlertCellRenderer extends DefaultTableCellRenderer {
-        private static final long serialVersionUID = 1L;
-        @Override
-        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int col) {
-            Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, col);
-            String severity = String.valueOf(table.getModel().getValueAt(row, 2));
-            String status = String.valueOf(table.getModel().getValueAt(row, 6));
-
-            if (!isSelected) {
-                if ("CRITICAL".equalsIgnoreCase(severity) && "UNREAD".equalsIgnoreCase(status)) {
-                    c.setBackground(new Color(255, 235, 235));
-                    c.setForeground(new Color(180, 0, 0));
-                } else if ("WARNING".equalsIgnoreCase(severity) && "UNREAD".equalsIgnoreCase(status)) {
-                    c.setBackground(new Color(255, 248, 230));
-                    c.setForeground(new Color(150, 80, 0));
-                } else {
-                    c.setBackground(Color.WHITE);
-                    c.setForeground(Color.BLACK);
+                    int days = Integer.parseInt(s.trim());
+                    if (days < 1) throw new NumberFormatException();
+                    CompletableFuture.supplyAsync(() -> alertManager.clearOldAlerts(days))
+                            .thenAccept(removed -> Platform.runLater(() -> {
+                                notifyRefresh();
+                                UiSafe.showInfo(UiSafe.windowOf(this), "Alerts Purged",
+                                        "Removed " + removed + " alert(s) older than " + days + " days.");
+                            }));
+                } catch (NumberFormatException ex) {
+                    UiSafe.showError(UiSafe.windowOf(this), "Invalid Days", "Enter a positive integer >= 1.");
                 }
-            }
-            return c;
+            });
+        });
+
+        Region tbSpacer = new Region();
+        HBox.setHgrow(tbSpacer, Priority.ALWAYS);
+        toolbar.getChildren().addAll(unreadOnlyCheck, severityFilter, refreshBtn, tbSpacer, markSelectedBtn, markAllReadBtn, purgeBtn);
+
+        UiSafe.configureSafeTable(table);
+        table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("ID", a -> String.valueOf(a.id()), 55), 45, 65));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("Timestamp", a -> TS_FMT.format(Instant.ofEpochMilli(a.timestamp())), 152), 148, 0));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.badgeColumn("Severity", a -> a.severity().name(),
+                a -> switch (a.severity()) {
+                    case CRITICAL -> "pill-danger";
+                    case WARNING -> "pill-warning";
+                    case INFO -> "pill-info";
+                }, 110), 100, 0));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("Type", a -> a.type().name(), 155), 135, 0));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("User", AlertManager.SystemAlert::username, 115), 95, 0));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.safeColumn("Message", AlertManager.SystemAlert::message, 360), 240, 0));
+        table.getColumns().add(UiSafe.withBounds(UiSafe.badgeColumn("State", a -> a.isRead() ? "READ" : "UNREAD",
+                a -> a.isRead() ? "pill-muted" : "pill-warning", 95), 85, 0));
+        VBox.setVgrow(table, Priority.ALWAYS);
+
+        VBox card = new VBox(12, toolbar, table);
+        card.getStyleClass().add("card");
+        VBox.setVgrow(card, Priority.ALWAYS);
+
+        getChildren().addAll(header, card);
+    }
+
+    private void notifyRefresh() {
+        refresh();
+        if (onAlertsChanged != null) {
+            onAlertsChanged.run();
         }
     }
+
+    public void refresh() {
+        boolean unreadOnly = unreadOnlyCheck.isSelected();
+        String sev = severityFilter.getValue();
+        CompletableFuture.supplyAsync(() -> {
+            List<AlertManager.SystemAlert> raw;
+            if (sev != null && !"ALL SEVERITIES".equals(sev)) {
+                raw = alertManager.getAlertsBySeverity(AlertManager.AlertSeverity.valueOf(sev));
+            } else if (unreadOnly) {
+                raw = alertManager.getUnreadAlerts();
+            } else {
+                raw = alertManager.getAllAlerts();
+            }
+            if (unreadOnly) {
+                raw = raw.stream().filter(a -> !a.isRead()).toList();
+            }
+            int unread = alertManager.getUnreadCount();
+            int critical = alertManager.getUnreadCriticalCount();
+            return new AlertSnapshot(raw, unread, critical);
+        }).thenAccept(snap -> Platform.runLater(() -> {
+            table.getItems().setAll(snap.alerts());
+            summaryPill.setText(snap.critical() > 0
+                    ? snap.critical() + " CRITICAL  ·  " + snap.unread() + " Unread"
+                    : snap.unread() + " Unread Alerts");
+            summaryPill.getStyleClass().removeAll("pill-danger", "pill-warning", "pill-success", "pill-muted");
+            summaryPill.getStyleClass().add(
+                    snap.critical() > 0 ? "pill-danger" : (snap.unread() > 0 ? "pill-warning" : "pill-success"));
+        }));
+    }
+
+    private record AlertSnapshot(List<AlertManager.SystemAlert> alerts, int unread, int critical) {}
 }
-
-

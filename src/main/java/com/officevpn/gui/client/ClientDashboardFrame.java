@@ -2,178 +2,268 @@ package com.officevpn.gui.client;
 
 import com.officevpn.client.VpnClientEngine;
 import com.officevpn.gui.UiSafe;
+import com.officevpn.protocol.VpnPacket;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Node;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
+import javafx.stage.Stage;
 
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JTabbedPane;
-import javax.swing.SwingUtilities;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
- * Main Employee Client Dashboard Frame.
- * <p>
- * Displayed only after successful cryptographic handshake and PBKDF2
- * authentication
- * confirmation from the Headquarters Gateway Server.
+ * JavaFX Client Encrypted Intranet Dashboard &amp; Multi-Panel Workspace.
  */
-public final class ClientDashboardFrame extends JFrame implements VpnClientEngine.ClientEventListener {
+public final class ClientDashboardFrame {
 
-    private static final long serialVersionUID = 1L;
+    private final Stage stage;
+    private final VpnClientEngine engine;
+    private final com.officevpn.security.TrustedFingerprintStore fingerprintStore;
+    private final FileVaultPanel fileVaultPanel;
+    private final ChatPanel chatPanel;
+    private final ConnectionStatusPanel connectionStatusPanel;
+    private final MyDevicesPanel myDevicesPanel;
 
-    private final transient VpnClientEngine clientEngine;
-    private final JLabel headerStatusLabel = new JLabel();
-    private final JButton disconnectButton = new JButton("Disconnect Tunnel");
+    private final StackPane contentHost = new StackPane();
+    private final Map<String, Button> navButtons = new LinkedHashMap<>();
+    private final Label tunnelPill = new Label("TUNNEL CONNECTED");
+    private final Label deptPill = new Label("");
+    private final Label pingStatusLabel = new Label("Gateway Latency: OK");
 
-    public ClientDashboardFrame(VpnClientEngine clientEngine) {
-        super("Office VPN Client - Secure Employee Gateway [10.8.0.x Subnet]");
-        this.clientEngine = clientEngine;
-        this.clientEngine.addClientEventListener(this);
+    private final VpnClientEngine.ClientEventListener engineListener;
+    private volatile boolean closing = false;
 
-        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-        setSize(920, 680);
-        setLocationRelativeTo(null);
+    public ClientDashboardFrame(Stage stage, VpnClientEngine engine) {
+        this(stage, engine, com.officevpn.security.TrustedFingerprintStore.getDefault());
+    }
 
-        // Header Panel
-        JPanel headerPanel = new JPanel(new BorderLayout(15, 5));
-        headerPanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, Color.LIGHT_GRAY),
-                BorderFactory.createEmptyBorder(12, 16, 12, 16)
-        ));
-        headerPanel.setBackground(new Color(245, 248, 252));
+    public ClientDashboardFrame(Stage stage, VpnClientEngine engine, com.officevpn.security.TrustedFingerprintStore fingerprintStore) {
+        this.stage = stage;
+        this.engine = engine;
+        this.fingerprintStore = (fingerprintStore != null)
+                ? fingerprintStore
+                : com.officevpn.security.TrustedFingerprintStore.getDefault();
 
-        JPanel userDetailsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 0));
-        userDetailsPanel.setOpaque(false);
+        this.fileVaultPanel = new FileVaultPanel(engine);
+        this.chatPanel = new ChatPanel(engine);
+        this.connectionStatusPanel = new ConnectionStatusPanel(engine);
+        this.myDevicesPanel = new MyDevicesPanel(engine);
 
-        JLabel logoLabel = new JLabel("OFFICE VPN");
-        logoLabel.setFont(new Font("SansSerif", Font.BOLD, 16));
-        logoLabel.setForeground(new Color(25, 75, 150));
-        userDetailsPanel.add(logoLabel);
+        this.engineListener = createClientListener();
+        this.engine.addClientEventListener(engineListener);
 
-        updateHeaderStatus();
-        headerStatusLabel.setFont(new Font("SansSerif", Font.PLAIN, 13));
-        userDetailsPanel.add(headerStatusLabel);
+        buildScene();
+    }
 
-        headerPanel.add(userDetailsPanel, BorderLayout.CENTER);
+    public void show() {
+        stage.show();
+        stage.toFront();
+    }
 
-        disconnectButton.setFont(new Font("SansSerif", Font.BOLD, 12));
-        disconnectButton.setForeground(new Color(180, 25, 25));
-        disconnectButton.setBackground(new Color(254, 240, 240));
-        disconnectButton.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(200, 35, 35), 2),
-                BorderFactory.createEmptyBorder(5, 14, 5, 14)
-        ));
-        disconnectButton.setFocusPainted(false);
-        disconnectButton.setOpaque(true);
-        disconnectButton.addActionListener(e -> confirmAndDisconnect());
-        headerPanel.add(disconnectButton, BorderLayout.EAST);
+    private void buildScene() {
+        BorderPane root = new BorderPane();
+        root.getStyleClass().add("app-root");
+        root.setLeft(buildSidebar());
+        root.setTop(buildTopBar());
 
-        getContentPane().add(headerPanel, BorderLayout.NORTH);
+        switchView("File Vault", fileVaultPanel);
+        root.setCenter(contentHost);
 
-        // Center: Tabbed Panes
-        JTabbedPane tabbedPane = new JTabbedPane();
-        tabbedPane.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        Scene scene = new Scene(root, 1140, 740);
+        UiSafe.applyTheme(scene);
 
-        FileVaultPanel fileVaultPanel = new FileVaultPanel(clientEngine);
-        ChatPanel chatPanel = new ChatPanel(clientEngine);
-        ConnectionStatusPanel statusPanel = new ConnectionStatusPanel(clientEngine);
-        MyDevicesPanel devicesPanel = new MyDevicesPanel(clientEngine);
+        String uname = UiSafe.text(engine.getUsername(), 32);
+        stage.setTitle("Office VPN Client — " + uname + " (" + engine.getDepartment() + ")");
+        stage.setMinWidth(920);
+        stage.setMinHeight(640);
+        stage.setScene(scene);
+        stage.setOnCloseRequest(e -> shutdownAndExit());
+    }
 
-        tabbedPane.addTab("Department File Vault", fileVaultPanel);
-        tabbedPane.addTab("Office Intranet Chat", chatPanel);
-        tabbedPane.addTab("Tunnel Diagnostics & Wire Inspector", statusPanel);
-        tabbedPane.addTab("My Registered Devices", devicesPanel);
+    private VBox buildSidebar() {
+        VBox sidebar = new VBox(6);
+        sidebar.getStyleClass().add("sidebar");
+        sidebar.setPrefWidth(235);
+        sidebar.setMinWidth(220);
 
-        getContentPane().add(tabbedPane, BorderLayout.CENTER);
+        VBox brand = new VBox(3);
+        brand.getStyleClass().add("brand-box");
+        Label bTitle = new Label("OFFICE VPN CLIENT");
+        bTitle.getStyleClass().add("brand-title");
+        Label bSub = new Label("PFS ECDH  ·  AES-256-GCM");
+        bSub.getStyleClass().add("brand-subtitle");
+        brand.getChildren().addAll(bTitle, bSub);
 
-        // Window Close Listener
-        addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowClosing(WindowEvent e) {
-                confirmAndDisconnect();
+        Label secWorkspace = new Label("ENCRYPTED WORKSPACE");
+        secWorkspace.getStyleClass().add("nav-section-label");
+
+        Button navVault = makeNavButton("File Vault", fileVaultPanel);
+        Button navChat = makeNavButton("Secure Chat", chatPanel);
+
+        Label secSecurity = new Label("TUNNEL & IDENTITY");
+        secSecurity.getStyleClass().add("nav-section-label");
+
+        Button navTunnel = makeNavButton("Tunnel & Defenses", connectionStatusPanel);
+        Button navDevices = makeNavButton("My Hardware", myDevicesPanel);
+
+        Region flex = new Region();
+        VBox.setVgrow(flex, Priority.ALWAYS);
+
+        VBox identityBox = new VBox(4);
+        identityBox.getStyleClass().add("card");
+        identityBox.setPadding(new Insets(10, 12, 10, 12));
+        Label idUser = new Label(UiSafe.text(engine.getUsername(), 32));
+        idUser.setStyle("-fx-font-weight: bold; -fx-text-fill: #f8fafc;");
+        Label idMeta = new Label((engine.getRole() != null ? engine.getRole().name() : "-")
+                + " · " + (engine.getDepartment() != null ? engine.getDepartment().name() : "-"));
+        idMeta.getStyleClass().add("muted-label");
+        Label idVip = new Label("VIP: " + UiSafe.text(engine.getAssignedVirtualIp(), 32));
+        idVip.getStyleClass().add("mono-text");
+        idVip.setStyle("-fx-text-fill: #22d3ee; -fx-font-weight: bold;");
+        identityBox.getChildren().addAll(idUser, idMeta, idVip);
+
+        sidebar.getChildren().addAll(
+                brand,
+                secWorkspace, navVault, navChat,
+                secSecurity, navTunnel, navDevices,
+                flex, identityBox
+        );
+        return sidebar;
+    }
+
+    private Button makeNavButton(String name, Node view) {
+        Button btn = new Button(name);
+        btn.getStyleClass().add("nav-button");
+        btn.setMaxWidth(Double.MAX_VALUE);
+        btn.setOnAction(e -> switchView(name, view));
+        navButtons.put(name, btn);
+        return btn;
+    }
+
+    private HBox buildTopBar() {
+        HBox topbar = new HBox(12);
+        topbar.getStyleClass().add("topbar");
+        topbar.setAlignment(Pos.CENTER_LEFT);
+
+        String vip = UiSafe.text(engine.getAssignedVirtualIp(), 32);
+        tunnelPill.setText("ENCRYPTED TUNNEL ACTIVE  ·  " + vip);
+        tunnelPill.getStyleClass().addAll("pill", "pill-success");
+
+        deptPill.setText("VAULT: " + (engine.getDepartment() != null ? engine.getDepartment().name() : "-"));
+        deptPill.getStyleClass().addAll("pill", "pill-info");
+
+        pingStatusLabel.getStyleClass().add("muted-label");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        Button copyVipBtn = new Button("Copy VIP");
+        copyVipBtn.getStyleClass().add("btn-secondary");
+        copyVipBtn.setOnAction(e -> UiSafe.copyToClipboard(vip));
+
+        Button pingBtn = new Button("Ping Gateway");
+        pingBtn.getStyleClass().add("btn-secondary");
+        pingBtn.setOnAction(e -> handlePing(pingBtn));
+
+        Button disconnectBtn = new Button("Disconnect");
+        disconnectBtn.getStyleClass().add("btn-danger");
+        disconnectBtn.setOnAction(e -> handleDisconnectToLogin());
+
+        topbar.getChildren().addAll(tunnelPill, deptPill, pingStatusLabel, spacer, copyVipBtn, pingBtn, disconnectBtn);
+        return topbar;
+    }
+
+    private void switchView(String name, Node view) {
+        contentHost.getChildren().setAll(view);
+        navButtons.forEach((key, btn) -> {
+            btn.getStyleClass().remove("nav-button-active");
+            if (key.equals(name)) {
+                btn.getStyleClass().add("nav-button-active");
             }
         });
     }
 
-    private void updateHeaderStatus() {
-        if (clientEngine.isAuthenticated()) {
-            headerStatusLabel.setText(String.format("User: %s  |  Dept: %s  |  VIP: %s  [CONNECTED]  |  DNS: 10.8.0.1 (Protected)  |  Mode: SPLIT  |  KillSwitch: ARMED",
-                    clientEngine.getUsername(),
-                    clientEngine.getDepartment(),
-                    clientEngine.getAssignedVirtualIp()));
-        } else {
-            headerStatusLabel.setText("Status: NOT AUTHENTICATED");
-        }
-    }
-
-    @Override
-    public void onChatMessage(String senderUser, String senderDept, String senderVip, String message) {
-    }
-
-    @Override
-    public void onPacketSniffed(com.officevpn.protocol.VpnPacket packet, String direction) {
-    }
-
-    @Override
-    public void onConnectionStateChanged(String state) {
-        SwingUtilities.invokeLater(() -> {
-            if (clientEngine.isConnected() && clientEngine.isAuthenticated()) {
-                updateHeaderStatus();
+    private void handlePing(Button pingBtn) {
+        pingBtn.setDisable(true);
+        long startNs = System.nanoTime();
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                return engine.ping();
+            } catch (Exception ex) {
+                throw new IllegalStateException(ex.getMessage(), ex);
+            }
+        }).whenComplete((alive, err) -> Platform.runLater(() -> {
+            pingBtn.setDisable(false);
+            long ms = Math.max(1, (System.nanoTime() - startNs) / 1_000_000L);
+            if (err != null || !Boolean.TRUE.equals(alive)) {
+                pingStatusLabel.setText("Ping Failed");
+                connectionStatusPanel.appendStateMessage("Gateway PING failed: " + (err != null ? err.getMessage() : "no reply"));
             } else {
-                headerStatusLabel.setText(String.format("User: %s  |  Dept: %s  |  [DISCONNECTED: %s]",
-                        clientEngine.getUsername() != null ? clientEngine.getUsername() : "-",
-                        clientEngine.getDepartment() != null ? clientEngine.getDepartment() : "-",
-                        state));
-                headerStatusLabel.setForeground(Color.RED);
-                disconnectButton.setText("Back to Login");
-                disconnectButton.setForeground(new Color(15, 23, 42));
-                disconnectButton.setBackground(new Color(245, 245, 245));
-                disconnectButton.setBorder(BorderFactory.createCompoundBorder(
-                        BorderFactory.createLineBorder(new Color(100, 116, 139), 2),
-                        BorderFactory.createEmptyBorder(5, 14, 5, 14)
-                ));
-                disconnectButton.setEnabled(true);
+                pingStatusLabel.setText("Gateway RTT: " + ms + " ms");
+                connectionStatusPanel.appendStateMessage("Gateway PING verified (" + ms + " ms RTT)");
             }
-        });
+        }));
     }
 
-    private void confirmAndDisconnect() {
-        if (!clientEngine.isConnected()) {
-            clientEngine.removeClientEventListener(this);
-            dispose();
-            new LoginFrame().setVisible(true);
-            return;
-        }
+    private VpnClientEngine.ClientEventListener createClientListener() {
+        return new VpnClientEngine.ClientEventListener() {
+            @Override
+            public void onChatMessage(String senderUser, String senderDept, String senderVip, String message) {
+                chatPanel.appendChatMessage(senderUser, senderDept, senderVip, message);
+            }
 
-        int choice = UiSafe.showConfirmDialog(this,
-                "Are you sure you want to terminate this encrypted VPN tunnel session?",
-                "Confirm Disconnect",
-                JOptionPane.YES_NO_OPTION,
-                JOptionPane.QUESTION_MESSAGE);
+            @Override
+            public void onPacketSniffed(VpnPacket packet, String direction) {
+                connectionStatusPanel.appendPacketSniffer(packet, direction);
+            }
 
-        if (choice == JOptionPane.YES_OPTION) {
-            disconnectButton.setEnabled(false);
-            clientEngine.removeClientEventListener(this);
-            new Thread(() -> {
-                clientEngine.disconnect();
-                SwingUtilities.invokeLater(() -> {
-                    dispose();
-                    new LoginFrame().setVisible(true);
+            @Override
+            public void onConnectionStateChanged(String state) {
+                connectionStatusPanel.appendStateMessage(state);
+                UiSafe.runOnFxThread(() -> {
+                    connectionStatusPanel.refreshControls();
+                    if (!closing && !engine.isConnected()) {
+                        tunnelPill.setText("DISCONNECTED");
+                        tunnelPill.getStyleClass().removeAll("pill-success", "pill-danger");
+                        tunnelPill.getStyleClass().add("pill-danger");
+                        pingStatusLabel.setText(UiSafe.text(state, 96));
+                    }
                 });
-            }, "vpn-client-disconnect-worker").start();
-        }
+            }
+        };
     }
 
-    public static void main(String[] args) {
-        VpnClientApp.main(args);
+    private void handleDisconnectToLogin() {
+        cleanupEngine();
+        LoginFrame login = new LoginFrame(new Stage(), fingerprintStore);
+        login.show();
+        stage.close();
+    }
+
+    private void shutdownAndExit() {
+        cleanupEngine();
+        Platform.exit();
+    }
+
+    private void cleanupEngine() {
+        closing = true;
+        connectionStatusPanel.dispose();
+        try {
+            engine.removeClientEventListener(engineListener);
+        } catch (Exception ignored) {}
+        try {
+            engine.close();
+        } catch (Exception ignored) {}
     }
 }
-
