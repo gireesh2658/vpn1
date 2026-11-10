@@ -1,5 +1,7 @@
 # Build and Bytecode
 target/
+build/
+out/
 bin/
 *.class
 *.jar
@@ -25,6 +27,8 @@ client_trusted_fingerprints.properties
 server_vaults/
 
 # Logs and Temporaries
+logs/
+server_data/
 *.log
 *.tmp
 *.bak
