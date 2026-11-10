@@ -1,5 +1,6 @@
 package com.officevpn.admin;
 
+import java.security.SecureRandom;
 import java.util.Locale;
 
 /**
@@ -16,6 +17,10 @@ public final class PasswordPolicy {
 
     public static final int MIN_LENGTH = 12;
     public static final int MAX_LENGTH = 128;
+
+    private static final String GENERATED_ALPHABET =
+            "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private PasswordPolicy() {}
 
@@ -58,6 +63,38 @@ public final class PasswordPolicy {
         if (LegacyDemoCredentials.isLegacyPassword(password)) {
             throw new IllegalArgumentException("Password matches a known insecure legacy default password");
         }
+    }
+
+    /**
+     * Generates a cryptographically random password meeting length and policy constraints.
+     */
+    public static String generateStrongPassword(int length) {
+        int effectiveLength = Math.max(MIN_LENGTH, Math.min(length, MAX_LENGTH));
+        String upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        String lower = "abcdefghijkmnopqrstuvwxyz";
+        String digits = "23456789";
+        String symbols = "!@#$%^&*";
+        for (int attempt = 0; attempt < 16; attempt++) {
+            char[] chars = new char[effectiveLength];
+            chars[0] = upper.charAt(SECURE_RANDOM.nextInt(upper.length()));
+            chars[1] = lower.charAt(SECURE_RANDOM.nextInt(lower.length()));
+            chars[2] = digits.charAt(SECURE_RANDOM.nextInt(digits.length()));
+            chars[3] = symbols.charAt(SECURE_RANDOM.nextInt(symbols.length()));
+            for (int i = 4; i < effectiveLength; i++) {
+                chars[i] = GENERATED_ALPHABET.charAt(SECURE_RANDOM.nextInt(GENERATED_ALPHABET.length()));
+            }
+            for (int i = effectiveLength - 1; i > 0; i--) {
+                int j = SECURE_RANDOM.nextInt(i + 1);
+                char tmp = chars[i];
+                chars[i] = chars[j];
+                chars[j] = tmp;
+            }
+            String candidate = new String(chars);
+            if (!LegacyDemoCredentials.isLegacyPassword(candidate)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("Unable to generate policy-compliant password");
     }
 }
 

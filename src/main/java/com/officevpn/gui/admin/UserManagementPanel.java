@@ -1,13 +1,14 @@
 package com.officevpn.gui.admin;
 
-import com.officevpn.admin.DemoSeeder;
 import com.officevpn.admin.PasswordPolicy;
 import com.officevpn.admin.UsernamePolicy;
+import com.officevpn.config.Messages;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.gui.UiSafe;
 import com.officevpn.model.Department;
 import com.officevpn.model.Role;
 import com.officevpn.model.UserAccount;
+import com.officevpn.security.QrCodeUtil;
 import com.officevpn.security.TotpUtil;
 import com.officevpn.server.VpnGatewayServer;
 import javafx.application.Platform;
@@ -22,6 +23,8 @@ import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
+import javafx.scene.image.ImageView;
+import javafx.scene.image.WritableImage;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -67,9 +70,12 @@ public final class UserManagementPanel extends VBox {
             String adminUsername,
             Runnable onUsersMutated
     ) {
+        if (adminUsername == null || adminUsername.isBlank()) {
+            throw new IllegalArgumentException("Authenticated administrator username is required");
+        }
         this.db = db;
         this.gatewayServer = gatewayServer;
-        this.adminUsername = adminUsername != null ? adminUsername : "admin_hq";
+        this.adminUsername = adminUsername.trim();
         this.onUsersMutated = onUsersMutated;
 
         setSpacing(14);
@@ -86,9 +92,9 @@ public final class UserManagementPanel extends VBox {
         HBox header = new HBox(10);
         header.setAlignment(Pos.CENTER_LEFT);
         VBox titleBox = new VBox(2);
-        Label title = new Label("User Lifecycle, RBAC & MFA Governance");
+        Label title = new Label(Messages.get("admin.users.title"));
         title.getStyleClass().add("page-title");
-        Label subtitle = new Label("Manage accounts, strong credential policies, departmental isolation, brute-force unlocks, TOTP 2FA, and device trust");
+        Label subtitle = new Label(Messages.get("admin.users.subtitle"));
         subtitle.getStyleClass().add("page-subtitle");
         titleBox.getChildren().addAll(title, subtitle);
         Region spacer = new Region();
@@ -99,76 +105,80 @@ public final class UserManagementPanel extends VBox {
         // Filters
         HBox filterBar = new HBox(10);
         filterBar.setAlignment(Pos.CENTER_LEFT);
-        searchField.setPromptText("Search username...");
+        searchField.setPromptText(Messages.get("admin.users.search.prompt"));
         searchField.setPrefWidth(220);
-        searchField.textProperty().addListener((obs, o, n) -> applyFilter());
+        searchField.textProperty().addListener((_, _, _) -> applyFilter());
 
         deptFilter.getItems().add("ALL DEPARTMENTS");
         for (Department d : Department.values()) {
             deptFilter.getItems().add(d.name());
         }
         deptFilter.getSelectionModel().selectFirst();
-        deptFilter.setOnAction(e -> applyFilter());
+        deptFilter.setOnAction(_ -> applyFilter());
 
         statusFilter.getItems().addAll("ALL STATUS", "ACTIVE ONLY", "DISABLED ONLY");
         statusFilter.getSelectionModel().selectFirst();
-        statusFilter.setOnAction(e -> applyFilter());
+        statusFilter.setOnAction(_ -> applyFilter());
 
-        Button refreshBtn = new Button("Refresh");
-        refreshBtn.getStyleClass().add("btn-secondary");
-        refreshBtn.setOnAction(e -> refresh());
+        Button refreshButton = new Button(Messages.get("common.refresh"));
+        refreshButton.getStyleClass().add("btn-secondary");
+        Messages.configureAccessibleControl(refreshButton, Messages.get("common.refresh"), null);
+        refreshButton.setOnAction(_ -> refresh());
 
-        Button createBtn = new Button("+ Create User");
-        createBtn.getStyleClass().add("btn-primary");
-        createBtn.setOnAction(e -> handleCreateUser());
+        Button addEmployeeButton = new Button(Messages.get("admin.users.button.addEmployee"));
+        addEmployeeButton.getStyleClass().add("btn-primary");
+        Messages.configureAccessibleControl(addEmployeeButton, Messages.get("admin.users.button.addEmployee"), null);
+        addEmployeeButton.setOnAction(_ -> handleCreateUser());
 
         Region fSpacer = new Region();
         HBox.setHgrow(fSpacer, Priority.ALWAYS);
-        filterBar.getChildren().addAll(searchField, deptFilter, statusFilter, refreshBtn, fSpacer, createBtn);
+        filterBar.getChildren().addAll(searchField, deptFilter, statusFilter, refreshButton, fSpacer, addEmployeeButton);
 
         // Action Bar (selection bound)
         FlowPane actionBar = new FlowPane(8, 8);
-        Button resetPwBtn = new Button("Reset Password");
-        Button changeRoleBtn = new Button("Change Role");
-        Button changeDeptBtn = new Button("Change Dept");
-        Button toggleActiveBtn = new Button("Enable / Disable");
-        toggleActiveBtn.getStyleClass().add("btn-warning");
-        Button deleteBtn = new Button("Delete Account");
-        deleteBtn.getStyleClass().add("btn-danger");
-        Button unlockBtn = new Button("Unlock Lockout");
-        Button totpBtn = new Button("Manage TOTP 2FA");
-        Button trustAllDevBtn = new Button("Trust All Devices");
-        trustAllDevBtn.getStyleClass().add("btn-success");
-        Button revokeAllDevBtn = new Button("Revoke All Devices");
-        revokeAllDevBtn.getStyleClass().add("btn-danger");
+        Button changePasswordButton = new Button(Messages.get("admin.users.button.resetPw"));
+        Button changeRoleButton = new Button(Messages.get("admin.users.button.changeRole"));
+        Button changeDepartmentButton = new Button(Messages.get("admin.users.button.changeDept"));
+        Button toggleActiveButton = new Button(Messages.get("admin.users.button.disable"));
+        toggleActiveButton.getStyleClass().add("btn-warning");
+        Button removeEmployeeButton = new Button(Messages.get("admin.users.button.removeEmployee"));
+        removeEmployeeButton.getStyleClass().add("btn-danger");
+        Button unlockAccountButton = new Button(Messages.get("admin.users.button.unlock"));
+        Button manageTotpButton = new Button(Messages.get("admin.users.button.manageTotp"));
+        Button trustAllDevicesButton = new Button(Messages.get("admin.users.button.trustAll"));
+        trustAllDevicesButton.getStyleClass().add("btn-success");
+        Button revokeDevicesButton = new Button(Messages.get("admin.users.button.revokeDevices"));
+        revokeDevicesButton.getStyleClass().add("btn-danger");
 
         List<Button> selectionButtons = List.of(
-                resetPwBtn, changeRoleBtn, changeDeptBtn, toggleActiveBtn,
-                deleteBtn, unlockBtn, totpBtn, trustAllDevBtn, revokeAllDevBtn
+                changePasswordButton, changeRoleButton, changeDepartmentButton, toggleActiveButton,
+                removeEmployeeButton, unlockAccountButton, manageTotpButton, trustAllDevicesButton, revokeDevicesButton
         );
         selectionButtons.forEach(b -> b.setDisable(true));
 
-        table.getSelectionModel().selectedItemProperty().addListener((obs, o, sel) -> {
+        table.getSelectionModel().selectedItemProperty().addListener((_, _, sel) -> {
             boolean hasSel = sel != null;
             selectionButtons.forEach(b -> b.setDisable(!hasSel));
             if (hasSel) {
-                toggleActiveBtn.setText(sel.account().active() ? "Disable Account" : "Enable Account");
+                toggleActiveButton.setText(sel.account().active()
+                        ? Messages.get("admin.users.button.disable")
+                        : Messages.get("admin.users.button.enable"));
             }
         });
 
-        resetPwBtn.setOnAction(e -> handleResetPassword(selectedUser()));
-        changeRoleBtn.setOnAction(e -> handleChangeRole(selectedUser()));
-        changeDeptBtn.setOnAction(e -> handleChangeDept(selectedUser()));
-        toggleActiveBtn.setOnAction(e -> handleToggleActive(selectedUser()));
-        deleteBtn.setOnAction(e -> handleDeleteUser(selectedUser()));
-        unlockBtn.setOnAction(e -> handleUnlockAccount(selectedUser()));
-        totpBtn.setOnAction(e -> handleManageTotp(selectedRow()));
-        trustAllDevBtn.setOnAction(e -> handleTrustAllDevices(selectedUser()));
-        revokeAllDevBtn.setOnAction(e -> handleRevokeAllDevices(selectedUser()));
+        changePasswordButton.setOnAction(_ -> handleResetPassword(selectedUser()));
+        changeRoleButton.setOnAction(_ -> handleChangeRole(selectedUser()));
+        changeDepartmentButton.setOnAction(_ -> handleChangeDept(selectedUser()));
+        toggleActiveButton.setOnAction(_ -> handleToggleActive(selectedUser()));
+        removeEmployeeButton.setOnAction(_ -> handleDeleteUser(selectedUser()));
+        unlockAccountButton.setOnAction(_ -> handleUnlockAccount(selectedUser()));
+        manageTotpButton.setOnAction(_ -> handleManageTotp(selectedRow()));
+        trustAllDevicesButton.setOnAction(_ -> handleTrustAllDevices(selectedUser()));
+        revokeDevicesButton.setOnAction(_ -> handleRevokeAllDevices(selectedUser()));
 
         actionBar.getChildren().addAll(
-                resetPwBtn, changeRoleBtn, changeDeptBtn, toggleActiveBtn,
-                deleteBtn, unlockBtn, totpBtn, trustAllDevBtn, revokeAllDevBtn
+                changePasswordButton, changeRoleButton, changeDepartmentButton, toggleActiveButton,
+                removeEmployeeButton, unlockAccountButton, manageTotpButton, trustAllDevicesButton, revokeDevicesButton
         );
 
         UiSafe.configureSafeTable(table);
@@ -178,8 +188,9 @@ public final class UserManagementPanel extends VBox {
         table.getColumns().add(UiSafe.badgeColumn("Role", r -> r.account().role().name(),
                 r -> r.account().role() == Role.ADMIN ? "pill-danger"
                         : (r.account().role() == Role.AUDITOR ? "pill-warning" : "pill-info"), 110));
-        table.getColumns().add(UiSafe.badgeColumn("TOTP 2FA", r -> r.totpEnabled() ? "ENABLED" : "OFF",
-                r -> r.totpEnabled() ? "pill-success" : "pill-muted", 100));
+        table.getColumns().add(UiSafe.badgeColumn("MFA (2FA)",
+                r -> r.totpEnabled() ? "ENABLED (6-digit)" : "OFF (Password Only)",
+                r -> r.totpEnabled() ? "pill-success" : "pill-muted", 145));
         table.getColumns().add(UiSafe.badgeColumn("Status", r -> r.account().active() ? "ACTIVE" : "DISABLED",
                 r -> r.account().active() ? "pill-success" : "pill-danger", 105));
         table.getColumns().add(UiSafe.safeColumn("Created",
@@ -203,7 +214,9 @@ public final class UserManagementPanel extends VBox {
     }
 
     public void refresh() {
+        if (db.isClosed()) return;
         CompletableFuture.supplyAsync(() -> {
+            if (db.isClosed()) return null;
             List<UserAccount> users = db.listAllUsers();
             List<UserRow> rows = new ArrayList<>(users.size());
             for (UserAccount u : users) {
@@ -211,6 +224,7 @@ public final class UserManagementPanel extends VBox {
             }
             return rows;
         }).thenAccept(rows -> Platform.runLater(() -> {
+            if (rows == null) return;
             allRows.clear();
             allRows.addAll(rows);
             applyFilter();
@@ -242,14 +256,14 @@ public final class UserManagementPanel extends VBox {
         passField.setPromptText("Min 12 chars with upper, lower, digit, symbol");
         Label genPreview = new Label("");
         genPreview.getStyleClass().add("mono-text");
-        genPreview.setStyle("-fx-text-fill: #22d3ee;");
+        genPreview.setStyle("-fx-text-fill: #096B67;");
 
-        Button genBtn = new Button("Generate Strong Passphrase");
+        Button genBtn = new Button(Messages.get("admin.users.dialog.generate"));
         genBtn.getStyleClass().add("btn-secondary");
-        genBtn.setOnAction(e -> {
-            String generated = DemoSeeder.generateRandomPassword(16);
+        genBtn.setOnAction(_ -> {
+            String generated = PasswordPolicy.generateStrongPassword(16);
             passField.setText(generated);
-            genPreview.setText("Generated (copied): " + generated);
+            genPreview.setText(Messages.get("admin.users.dialog.generatedHidden"));
             UiSafe.copyToClipboard(generated);
         });
 
@@ -261,18 +275,26 @@ public final class UserManagementPanel extends VBox {
         roleBox.getItems().addAll(Role.values());
         roleBox.setValue(Role.EMPLOYEE);
 
+        Label mfaDefaultNote = new Label(
+                "MFA Note: New accounts start with MFA OFF (sign in with Username + Password only). "
+                        + "To require 6-digit Authenticator codes, select the user afterward and click 'Manage 2FA'.");
+        mfaDefaultNote.getStyleClass().add("muted-label");
+        mfaDefaultNote.setWrapText(true);
+
         VBox content = new VBox(8,
-                new Label("Username"), userField,
-                new Label("Initial Passphrase"), passField,
+                new Label(Messages.get("common.label.username")), userField,
+                new Label(Messages.get("admin.users.dialog.add.label.passphrase")), passField,
                 new HBox(8, genBtn, genPreview),
-                new Label("Department"), deptBox,
-                new Label("Role"), roleBox
+                new Label(Messages.get("admin.users.dialog.add.label.department")), deptBox,
+                new Label(Messages.get("admin.users.dialog.add.label.role")), roleBox,
+                mfaDefaultNote
         );
         content.setPrefWidth(430);
 
-        Dialog<ButtonType> dialog = UiSafe.createDialog(UiSafe.windowOf(this), "Create User Account",
-                "Provision new encrypted intranet user", content);
-        ButtonType createType = new ButtonType("Create User", ButtonBar.ButtonData.OK_DONE);
+        Dialog<ButtonType> dialog = UiSafe.createDialog(UiSafe.windowOf(this),
+                Messages.get("admin.users.dialog.add.title"),
+                Messages.get("admin.users.dialog.add.header"), content);
+        ButtonType createType = new ButtonType(Messages.get("admin.users.button.addEmployee"), ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(createType, ButtonType.CANCEL);
         UiSafe.stylePrimaryDialogButton(dialog, createType);
 
@@ -311,22 +333,24 @@ public final class UserManagementPanel extends VBox {
         passField.setPromptText("New strong passphrase (min 12 chars)");
         Label genPreview = new Label("");
         genPreview.getStyleClass().add("mono-text");
-        genPreview.setStyle("-fx-text-fill: #22d3ee;");
+        genPreview.setStyle("-fx-text-fill: #096B67;");
 
-        Button genBtn = new Button("Generate Strong Passphrase");
+        Button genBtn = new Button(Messages.get("admin.users.dialog.generate"));
         genBtn.getStyleClass().add("btn-secondary");
-        genBtn.setOnAction(e -> {
-            String generated = DemoSeeder.generateRandomPassword(16);
+        genBtn.setOnAction(_ -> {
+            String generated = PasswordPolicy.generateStrongPassword(16);
             passField.setText(generated);
-            genPreview.setText("Generated (copied): " + generated);
+            genPreview.setText(Messages.get("admin.users.dialog.generatedHidden"));
             UiSafe.copyToClipboard(generated);
         });
 
-        VBox content = new VBox(8, new Label("New Passphrase for " + target.username()), passField, genBtn, genPreview);
+        VBox content = new VBox(8, new Label(Messages.format("admin.users.dialog.reset.label", target.username())),
+                passField, genBtn, genPreview);
         content.setPrefWidth(420);
-        Dialog<ButtonType> dialog = UiSafe.createDialog(UiSafe.windowOf(this), "Reset Passphrase",
-                "Reset credential for '" + target.username() + "'", content);
-        ButtonType okType = new ButtonType("Reset Password", ButtonBar.ButtonData.OK_DONE);
+        Dialog<ButtonType> dialog = UiSafe.createDialog(UiSafe.windowOf(this),
+                Messages.get("admin.users.dialog.reset.title"),
+                Messages.format("admin.users.dialog.reset.header", target.username()), content);
+        ButtonType okType = new ButtonType(Messages.get("client.password.button.save"), ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(okType, ButtonType.CANCEL);
         UiSafe.stylePrimaryDialogButton(dialog, okType);
 
@@ -354,10 +378,11 @@ public final class UserManagementPanel extends VBox {
         ComboBox<Role> box = new ComboBox<>();
         box.getItems().addAll(Role.values());
         box.setValue(target.role());
-        VBox content = new VBox(8, new Label("Assign new role to " + target.username() + ":"), box);
-        Dialog<ButtonType> dialog = UiSafe.createDialog(UiSafe.windowOf(this), "Change User Role",
-                "Update RBAC role for '" + target.username() + "'", content);
-        ButtonType okType = new ButtonType("Save Role", ButtonBar.ButtonData.OK_DONE);
+        VBox content = new VBox(8, new Label(Messages.format("admin.users.dialog.role.label", target.username())), box);
+        Dialog<ButtonType> dialog = UiSafe.createDialog(UiSafe.windowOf(this),
+                Messages.get("admin.users.dialog.role.title"),
+                Messages.format("admin.users.dialog.role.header", target.username()), content);
+        ButtonType okType = new ButtonType(Messages.get("admin.users.dialog.role.save"), ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(okType, ButtonType.CANCEL);
         if (dialog.showAndWait().orElse(ButtonType.CANCEL) != okType) return;
         Role newRole = box.getValue();
@@ -372,10 +397,11 @@ public final class UserManagementPanel extends VBox {
         ComboBox<Department> box = new ComboBox<>();
         box.getItems().addAll(Department.values());
         box.setValue(target.department());
-        VBox content = new VBox(8, new Label("Assign new department vault to " + target.username() + ":"), box);
-        Dialog<ButtonType> dialog = UiSafe.createDialog(UiSafe.windowOf(this), "Change User Department",
-                "Update vault assignment for '" + target.username() + "'", content);
-        ButtonType okType = new ButtonType("Save Department", ButtonBar.ButtonData.OK_DONE);
+        VBox content = new VBox(8, new Label(Messages.format("admin.users.dialog.dept.label", target.username())), box);
+        Dialog<ButtonType> dialog = UiSafe.createDialog(UiSafe.windowOf(this),
+                Messages.get("admin.users.dialog.dept.title"),
+                Messages.format("admin.users.dialog.dept.header", target.username()), content);
+        ButtonType okType = new ButtonType(Messages.get("admin.users.dialog.dept.save"), ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(okType, ButtonType.CANCEL);
         if (dialog.showAndWait().orElse(ButtonType.CANCEL) != okType) return;
         Department newDept = box.getValue();
@@ -445,27 +471,69 @@ public final class UserManagementPanel extends VBox {
             String secret = TotpUtil.generateSecret();
             String encodedUser = java.net.URLEncoder.encode(u.username(), java.nio.charset.StandardCharsets.UTF_8);
             String uri = "otpauth://totp/OfficeVPN:" + encodedUser + "?secret=" + secret + "&issuer=OfficeVPN";
-            VBox box = new VBox(8);
-            Label sLbl = new Label("Base32 Secret: " + secret);
+
+            Label instr = new Label(Messages.get("admin.users.dialog.totp.instruction"));
+            instr.setWrapText(true);
+
+            WritableImage qrImg = QrCodeUtil.toFxImage(QrCodeUtil.encode(uri), 4, 4, 0xFF26233A, 0xFFFFFFFF);
+            ImageView qrView = new ImageView(qrImg);
+            qrView.setPreserveRatio(true);
+            qrView.setFitWidth(180);
+            HBox qrFrame = new HBox(qrView);
+            qrFrame.setAlignment(Pos.CENTER);
+            qrFrame.setPadding(new Insets(10));
+            qrFrame.setStyle("-fx-background-color: #FFFFFF; -fx-border-color: #E6DCC6; -fx-border-radius: 10; -fx-background-radius: 10;");
+
+            Label sLbl = new Label("Manual Setup Key (Base32): " + formatBase32Groups(secret));
             sLbl.getStyleClass().add("mono-text");
-            sLbl.setStyle("-fx-text-fill: #22d3ee; -fx-font-weight: bold;");
+            sLbl.setStyle("-fx-text-fill: #096B67; -fx-font-weight: bold;");
+            sLbl.setWrapText(true);
+
             TextField uriField = new TextField(uri);
             uriField.setEditable(false);
             uriField.getStyleClass().add("mono-text");
-            Button copyBtn = new Button("Copy Base32 Secret");
-            copyBtn.getStyleClass().add("btn-secondary");
-            copyBtn.setOnAction(e -> UiSafe.copyToClipboard(secret));
-            Button copyUriBtn = new Button("Copy otpauth URI");
-            copyUriBtn.getStyleClass().add("btn-secondary");
-            copyUriBtn.setOnAction(e -> UiSafe.copyToClipboard(uri));
-            box.getChildren().addAll(
-                    new Label("Enroll RFC 6238 Authenticator App before clicking Enable:"),
-                    sLbl, new Label("otpauth URI"), uriField, new HBox(8, copyBtn, copyUriBtn));
-            box.setPrefWidth(480);
 
-            Dialog<ButtonType> dialog = UiSafe.createDialog(UiSafe.windowOf(this), "Enable TOTP 2FA",
-                    "Provision Two-Factor Secret for '" + u.username() + "'", box);
-            ButtonType saveBtn = new ButtonType("Enable 2FA", ButtonBar.ButtonData.OK_DONE);
+            Button copyBtn = new Button(Messages.get("admin.users.dialog.totp.copySecret"));
+            copyBtn.getStyleClass().add("btn-secondary");
+            copyBtn.setOnAction(_ -> UiSafe.copyToClipboard(secret));
+            Button copyUriBtn = new Button(Messages.get("admin.users.dialog.totp.copyUri"));
+            copyUriBtn.getStyleClass().add("btn-secondary");
+            copyUriBtn.setOnAction(_ -> UiSafe.copyToClipboard(uri));
+
+            TextField testCodeField = new TextField();
+            testCodeField.setPromptText("Enter 6-digit code from Authenticator app");
+            testCodeField.setPrefWidth(220);
+            Label testResultLbl = new Label("");
+            testResultLbl.setWrapText(true);
+            Button testBtn = new Button("Test 6-Digit Code");
+            testBtn.getStyleClass().add("btn-secondary");
+            testBtn.setOnAction(_ -> {
+                String code = testCodeField.getText() != null ? testCodeField.getText().trim() : "";
+                if (TotpUtil.verifyCode(secret, code)) {
+                    testResultLbl.setText("Verified! Your Authenticator app matches.");
+                    testResultLbl.setStyle("-fx-text-fill: #096B67; -fx-font-weight: bold;");
+                } else {
+                    testResultLbl.setText("Code did not match. Wait for the next 30s code or verify manual setup key.");
+                    testResultLbl.setStyle("-fx-text-fill: #BA2A1A; -fx-font-weight: bold;");
+                }
+            });
+
+            VBox box = new VBox(10,
+                    instr,
+                    qrFrame,
+                    sLbl,
+                    new Label("otpauth:// URI"),
+                    uriField,
+                    new HBox(8, copyBtn, copyUriBtn),
+                    new Label("Optional Check: Test your Authenticator code before enabling MFA"),
+                    new HBox(8, testCodeField, testBtn),
+                    testResultLbl);
+            box.setPrefWidth(500);
+
+            Dialog<ButtonType> dialog = UiSafe.createDialog(UiSafe.windowOf(this),
+                    Messages.get("admin.users.dialog.totp.title"),
+                    Messages.format("admin.users.dialog.totp.header", u.username()), box);
+            ButtonType saveBtn = new ButtonType(Messages.get("admin.users.dialog.totp.save"), ButtonBar.ButtonData.OK_DONE);
             dialog.getDialogPane().getButtonTypes().addAll(saveBtn, ButtonType.CANCEL);
             UiSafe.stylePrimaryDialogButton(dialog, saveBtn);
             if (dialog.showAndWait().orElse(ButtonType.CANCEL) != saveBtn) return;
@@ -479,10 +547,24 @@ public final class UserManagementPanel extends VBox {
         }
     }
 
+    private static String formatBase32Groups(String secret) {
+        if (secret == null) return "";
+        StringBuilder sb = new StringBuilder(secret.length() + secret.length() / 4);
+        for (int i = 0; i < secret.length(); i++) {
+            if (i > 0 && i % 4 == 0) sb.append(' ');
+            sb.append(secret.charAt(i));
+        }
+        return sb.toString();
+    }
+
     private void handleTrustAllDevices(UserAccount target) {
         if (target == null) return;
         runDbTask("Trusting devices...", () -> {
             int n = db.trustAllDevicesForUser(target.username());
+            if (n > 0) {
+                db.logAuditEvent("ALL_DEVICES_TRUSTED", target.username(), target.department().name(),
+                        "All registered devices trusted (count=" + n + ")", adminUsername, "local");
+            }
             return "Marked " + n + " device(s) as TRUSTED for '" + target.username() + "'.";
         });
     }
@@ -496,6 +578,10 @@ public final class UserManagementPanel extends VBox {
         }
         runDbTask("Revoking devices...", () -> {
             int n = db.revokeAllDevicesForUser(target.username());
+            if (n > 0) {
+                db.logAuditEvent("ALL_DEVICES_REVOKED", target.username(), target.department().name(),
+                        "All registered devices revoked (count=" + n + ")", adminUsername, "local");
+            }
             return "Revoked trust on " + n + " device(s) for '" + target.username() + "'.";
         });
     }

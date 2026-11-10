@@ -72,15 +72,15 @@ public final class GatewayShelf extends Control {
     private final ObservableList<GatewayNode> gateways = FXCollections.observableArrayList();
     private final ObjectProperty<GatewayNode> selectedGateway = new SimpleObjectProperty<>(null);
     private final StringProperty searchQuery = new SimpleStringProperty("");
-    private final ObjectProperty<Consumer<GatewayNode>> onConnectGateway = new SimpleObjectProperty<>(gw -> {});
-    private final ObjectProperty<Consumer<GatewayNode>> onToggleFavorite = new SimpleObjectProperty<>(gw -> {});
+    private final ObjectProperty<Consumer<GatewayNode>> onConnectGateway = new SimpleObjectProperty<>(_ -> {});
+    private final ObjectProperty<Consumer<GatewayNode>> onToggleFavorite = new SimpleObjectProperty<>(_ -> {});
     private final ObjectProperty<Runnable> onOpenCommandPalette = new SimpleObjectProperty<>(() -> {});
 
     public GatewayShelf() {
         getStyleClass().setAll("gateway-shelf");
         setFocusTraversable(true);
         setAccessibleRole(AccessibleRole.LIST_VIEW);
-        selectedGateway.addListener((obs, o, n) -> {
+        selectedGateway.addListener((_, _, n) -> {
             pseudoClassStateChanged(PC_HAS_SELECTION, n != null);
             setAccessibleText("Gateway Shelf, selected " + (n != null ? n.city() + " " + n.latencyMs() + "ms" : "none"));
         });
@@ -89,10 +89,10 @@ public final class GatewayShelf extends Control {
     public void bindService(VpnClientService service) {
         if (service == null) return;
         Runnable sync = () -> gateways.setAll(service.gateways());
-        service.gateways().addListener((ListChangeListener<GatewayNode>) c -> sync.run());
+        service.gateways().addListener((ListChangeListener<GatewayNode>) _ -> sync.run());
         sync.run();
         selectedGateway.set(service.selectedGatewayProperty().get());
-        service.selectedGatewayProperty().addListener((obs, o, n) -> selectedGateway.set(n));
+        service.selectedGatewayProperty().addListener((_, _, n) -> selectedGateway.set(n));
 
         onConnectGateway.set(gw -> {
             if (gw != null) service.connect(gw.id());
@@ -147,7 +147,7 @@ public final class GatewayShelf extends Control {
         ObservableList<PaletteAction> filtered = FXCollections.observableArrayList(allActions);
         ListView<PaletteAction> list = new ListView<>(filtered);
         list.setPrefHeight(260);
-        list.setCellFactory(lv -> new ListCell<>() {
+        list.setCellFactory(_ -> new ListCell<>() {
             @Override
             protected void updateItem(PaletteAction item, boolean empty) {
                 super.updateItem(item, empty);
@@ -174,7 +174,7 @@ public final class GatewayShelf extends Control {
         });
         if (!filtered.isEmpty()) list.getSelectionModel().select(0);
 
-        input.textProperty().addListener((obs, o, q) -> {
+        input.textProperty().addListener((_, _, q) -> {
             filtered.setAll(allActions.stream()
                     .filter(a -> fuzzyScore(a.category() + " " + a.title() + " " + a.detail(), q) >= 0)
                     .toList());
@@ -301,7 +301,7 @@ public final class GatewayShelf extends Control {
             paletteBtn.getStyleClass().add("ia-pill-sand");
             paletteBtn.setGraphic(Icons.ink(Feather.COMMAND, 13));
             paletteBtn.setFocusTraversable(false);
-            paletteBtn.setOnAction(e -> {
+            paletteBtn.setOnAction(_ -> {
                 Runnable r = control.onOpenCommandPaletteProperty().get();
                 if (r != null) r.run();
             });
@@ -314,9 +314,9 @@ public final class GatewayShelf extends Control {
             root.getChildren().addAll(searchBar, branchesBox);
             getChildren().add(root);
 
-            control.gateways().addListener((ListChangeListener<GatewayNode>) c -> rebuildCards());
-            control.searchQueryProperty().addListener((obs, o, n) -> rebuildCards());
-            control.selectedGatewayProperty().addListener((obs, o, n) -> updateSelectionHighlight(n));
+            control.gateways().addListener((ListChangeListener<GatewayNode>) _ -> rebuildCards());
+            control.searchQueryProperty().addListener((_, _, _) -> rebuildCards());
+            control.selectedGatewayProperty().addListener((_, _, n) -> updateSelectionHighlight(n));
 
             control.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
                 if (CTRL_K.match(e)) {
@@ -369,7 +369,7 @@ public final class GatewayShelf extends Control {
 
             Map<String, List<GatewayNode>> grouped = new LinkedHashMap<>();
             for (GatewayNode g : matches) {
-                grouped.computeIfAbsent(g.branch(), k -> new ArrayList<>()).add(g);
+                grouped.computeIfAbsent(g.branch(), _ -> new ArrayList<>()).add(g);
             }
 
             if (grouped.isEmpty()) {
@@ -438,7 +438,7 @@ public final class GatewayShelf extends Control {
             HBox card = new HBox(12, vial, texts, loadLbl, latencyPill, starBtn, connectBtn);
             card.setAlignment(Pos.CENTER_LEFT);
             card.getStyleClass().add("gateway-card");
-            card.setOnMouseClicked(e -> getSkinnable().selectedGatewayProperty().set(gw));
+            card.setOnMouseClicked(_ -> getSkinnable().selectedGatewayProperty().set(gw));
             return card;
         }
 
@@ -510,7 +510,7 @@ public final class GatewayShelf extends Control {
                 g.setLineWidth(1.2);
                 g.strokePolygon(xs, ys, 10);
             };
-            sparkProgress.addListener((obs, o, n) -> drawStar.run());
+            sparkProgress.addListener((_, _, _) -> drawStar.run());
             drawStar.run();
 
             btn.setOnAction(e -> {
@@ -519,7 +519,7 @@ public final class GatewayShelf extends Control {
                             new KeyFrame(Duration.ZERO, new KeyValue(sparkProgress, 0.0)),
                             new KeyFrame(Motion.MEDIUM, new KeyValue(sparkProgress, 1.0))
                     );
-                    tl.setOnFinished(ev -> {
+                    tl.setOnFinished(_ -> {
                         sparkProgress.set(0.0);
                         var cb = getSkinnable().onToggleFavoriteProperty().get();
                         if (cb != null) cb.accept(gw);

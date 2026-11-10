@@ -27,11 +27,11 @@ An application-level zero-trust encrypted intranet gateway and departmental acce
 | **Directional Key Isolation** | **Implemented** | HKDF-SHA256 extracts independent `c2sKey` and `s2cKey` derived from the ECDH secret and transcript hash. |
 | **Anti-Replay Protection** | **Implemented** | 128-bit sliding bitmap sequence window and per-session IV tracking applied post-authentication. |
 | **Credential Security** | **Implemented** | PBKDF2WithHmacSHA256 with 600,000 iterations, 16-byte CSPRNG salt, and memory zeroization (`char[]` scrubbing). |
-| **Multi-Factor Auth (MFA)** | **Implemented** | RFC 6238 TOTP with constant-time equality check, step replay rejection, and progressive lockout counter. |
+| **Multi-Factor Auth (MFA)** | **Implemented** | Optional RFC 6238 TOTP (off by default; scannable QR code + Base32 enrollment & live verifier in Admin `Manage 2FA`, constant-time check, step replay rejection, lockout counter). |
 | **Device Trust & Quotas** | **Implemented** | Fail-closed device trust check; atomic auto-enrollment up to 3 devices per user in a single database transaction. |
 | **Departmental Isolation** | **Implemented** | Role-based vaults (`FINANCE`, `HR`, `IT`, `HEADQUARTERS`) with canonical path confinement (`Path.toRealPath(NOFOLLOW_LINKS)`). |
 | **Audit Logging** | **Implemented** | Forward-linked HMAC-SHA256 audit chaining with CRLF log injection neutralization. |
-| **Administrative & Client GUI** | **Implemented** | JavaFX 25 cyber-defense dark desktop dashboards (`AdminDashboardApp` and `VpnClientApp`) with non-blocking async UX. |
+| **Administrative & Client GUI** | **Implemented** | Unified light-editorial **Ivory Atelier** JavaFX 25 consoles (`AdminDashboardApp` and `VpnClientApp`) with File Vault, Secure Chat, Device Trust, Password Change, Ping Latency, and QR MFA enrollment. |
 | *Kernel TUN/TAP Driver* | *Future Scope* | Native OS virtual network adapter (`wintun.sys` / `/dev/net/tun`) for capturing full OS-level IP packets. |
 | *OS Firewall & Route Hooking* | *Future Scope* | System routing table manipulation (`route add`) and firewall automation via platform APIs. |
 
@@ -70,7 +70,7 @@ Client                                                              Server
 1. **Transcript Signature:** Server signs the canonical transcript (`OFFICE-VPN-2.0 || clientRandom || serverRandom || clientEcPub || serverEcPub`) using RSASSA-PSS.
 2. **Key Derivation:** HKDF-SHA256 derives 256-bit directional session keys (`c2sKey` and `s2cKey`) using `SHA-256(transcript)` as salt.
 3. **Directional AEAD:** Every wire packet is encrypted with AES-256-GCM. The AAD includes packet metadata, sequence number, and a direction byte (`0x01` client-to-server, `0x02` server-to-client) preventing cross-stream packet reflection attacks.
-4. **Automated Verification:** All cryptographic primitives, handshake mechanics, anti-replay sliding window, and auth flows are validated via JUnit 5 tests (`mvn -Pstrict verify`).
+4. **Strict Build Check:** Strict Maven compilation (`mvn clean package -Pstrict`) enforces `-Xlint:all -Werror` with zero warnings or errors across the entire Java 25 source tree.
 
 ---
 
@@ -81,7 +81,7 @@ Client                                                              Server
 - **Database:** MySQL / MariaDB via `mysql-connector-j` 9.6.0 & HikariCP 7.1.0 connection pooling
 - **Logging:** SLF4J 2.0.16 with `slf4j-simple`
 - **Security:** Standard Java Cryptography Architecture (`java.security`, `javax.crypto`)
-- **UI Framework:** JavaFX 25 (`javafx-controls`, `javafx-graphics`, `javafx-base`) with `officevpn-theme.css` & `UiSafe` sanitization
+- **UI Framework:** JavaFX 25 (`javafx-controls`, `javafx-graphics`, `javafx-base`), AtlantaFX `atlantafx-base` 3.0.0, Ikonli Feather icons 12.4.0, bundled OFL typography (`Fraunces`, `Manrope`, `JetBrains Mono`), CSS themes (`officevpn-theme.css` & `ui/theme/ivory-atelier.css`), and centralized `i18n/messages.properties`
 
 ---
 
@@ -90,41 +90,47 @@ Client                                                              Server
 ### Prerequisites
 - JDK 25 LTS installed and on `PATH`
 - Apache Maven 3.9+
-- Running MySQL 8+ or MariaDB 10.4+ instance (auto-creates `office_vpn` schema; configure credentials in `src/main/resources/config.properties` or via `-Dofficevpn.db.*` / `OFFICEVPN_DB_*` environment variables)
+- Running local MySQL 8+ instance (auto-initializes `office_vpn` schema; supply `db.user` / `db.password` externally via `~/.officevpn/db.properties`, `./config.local.properties`, `-Dofficevpn.db.*`, or `OFFICEVPN_DB_*` environment variables)
 
-### Build Shaded Executable JARs
+### Build Executable JARs
 ```bash
-mvn clean verify -Pstrict -Djava.awt.headless=true
+mvn clean package -Pstrict
 ```
-*(In Windows PowerShell, quote `-D` flags: `mvn clean verify -Pstrict "-Djava.awt.headless=true"`.)*
-This produces two self-contained executable JavaFX + MySQL JARs in `target/`:
+This compiles with `-Xlint:all -Werror` and zero warnings, packaging two shaded executable JARs in `target/`:
 - `target/office-vpn-server.jar`
 - `target/office-vpn-client.jar`
 
-The strict profile compiles with `-Xlint:all -Werror` to guarantee zero compiler warnings.
-
-### First-Run Administrator Setup & Running Apps
-On first startup with a fresh MySQL database (`office_vpn`), the server initializes InnoDB tables + append-only `audit_logs` triggers and launches the **Administrator Bootstrap Setup**:
-1. Start MySQL / MariaDB on `127.0.0.1:3306` (default `db.user=root`, empty `db.password`, or override in `config.properties`).
-2. Launch the **Admin Gateway Suite**: `java -jar target/office-vpn-server.jar`
-3. Launch the **VPN Client Portal**: `java -jar target/office-vpn-client.jar`
-4. Enter the administrator username and a strong passphrase meeting policy requirements (min 12 characters with upper, lower, numeric, and symbol chars).
-5. Unlock or create the server PKCS#12 identity keystore via `OFFICEVPN_KEYSTORE_PASS` or the interactive dialog.
-
-> **Testing / Grading Demo Mode:** To auto-seed deterministic demo accounts (`admin_hq`, `alice_fin`, `bob_hr`, `charlie_it`, `david_auditor`):
-> ```bash
-> java "-Dofficevpn.demo=true" -jar target/office-vpn-server.jar
-> ```
+### First-Run Setup & Running Applications
+On first startup with an empty MySQL database (`office_vpn`), the server initializes InnoDB tables + append-only `audit_logs` triggers and launches the **Initial Administrator Setup**:
+1. Start local **MySQL Server 8.4** on `127.0.0.1:3306` and provide external credentials (`db.user` / `db.password`) in `~/.officevpn/db.properties` or `./config.local.properties`.
+2. Launch the **Admin Gateway Console**:
+   ```bash
+   java -jar target/office-vpn-server.jar
+   ```
+   Or headless CLI Gateway without GUI:
+   ```bash
+   java -cp target/office-vpn-server.jar com.officevpn.server.VpnServer
+   ```
+3. Launch the **VPN Client Portal** (opens the unified **Ivory Atelier** workspace directly):
+   ```bash
+   java -jar target/office-vpn-client.jar
+   ```
+   Or launch the **Interactive Console CLI**:
+   ```bash
+   java -cp target/office-vpn-client.jar com.officevpn.client.ConsoleClient
+   ```
+4. Create the initial Headquarters administrator username and a strong passphrase meeting policy requirements (min 12 characters with upper, lower, numeric, and symbol chars).
+5. Unlock or create the encrypted RSA-2048 identity keystore (`server_data/server_identity.key`) via `OFFICEVPN_KEYSTORE_PASS` or the interactive dialog.
+6. **Optional MFA (TOTP 2FA):** Leave the 6-digit MFA boxes empty unless an admin enabled TOTP 2FA on your account via **Users -> Manage 2FA** (which displays a scannable QR code for Google/Microsoft Authenticator plus a live test verifier).
 
 ---
 
-## 5. Project Structure
+## 5. Project Structure & Configuration
+
+All non-secret network, port, data directory, subnet, and pool settings are centralized in `src/main/resources/config.properties` (`ConfigUtil`), overlaid cleanly by external `~/.officevpn/db.properties` and `./config.local.properties`. All desktop UI strings are externalized in `src/main/resources/i18n/messages.properties` (`Messages`).
 
 ```
 office-vpn-system/
-|-- .github/
-|   `-- workflows/
-|       `-- ci.yml                  # GitHub Actions continuous integration workflow
 |-- .gitignore
 |-- LICENSE
 |-- pom.xml
@@ -132,22 +138,26 @@ office-vpn-system/
 `-- src/
     `-- main/
         |-- java/com/officevpn/
-        |   |-- admin/              # User lifecycle, onboarding, offboarding, alerts, metrics, server control
-        |   |-- client/             # Client engine, auto-reconnect, TOFU policies, console client
-        |   |-- config/             # Central configuration utilities
-        |   |-- db/                 # MySQL HikariCP connection pooling, schema init, audit trail
-        |   |-- gui/                # JavaFX desktop cyber-defense dashboards (Admin and Client)
-        |   |-- model/              # Immutable domain models and records
-        |   |-- network/            # Bandwidth limiter, DNS leak guard, site-to-site tunnels
-        |   |-- protocol/           # Binary wire packet framing, anti-replay sliding window
-        |   |-- security/           # AES-GCM, ECDH PFS, HKDF, PBKDF2, TOTP, key pinning
-        |   |-- server/             # Gateway server, connection guard, virtual IP pool, session manager
-        |   |-- storage/            # Department file vaults with atomic writes and path traversal defense
-        |   `-- tunnel/             # Split tunneling and full tunneling engines
+        |   |-- admin/                   # User lifecycle, bootstrap, policies, alerts, metrics, audit service
+        |   |-- client/                  # Client engine, auto-reconnect, TOFU policies, ConsoleClient CLI
+        |   |-- config/                  # ConfigUtil & Messages (ResourceBundle i18n helper)
+        |   |-- db/                      # MySQL HikariCP connection pooling, schema init, HMAC audit chain
+        |   |-- gui/                     # JavaFX enterprise dashboards (Admin and Client portals)
+        |   |-- model/                   # Immutable domain models, roles, departments, audit records
+        |   |-- network/                 # Bandwidth limiter, DNS leak guard, site-to-site peer manager
+        |   |-- protocol/                # Binary wire framing, PacketType, VpnPacket
+        |   |-- security/                # AES-GCM, ECDH PFS, HKDF, PBKDF2, TOTP, key pinning, replay window
+        |   |-- server/                  # Gateway server, ClientHandler, VirtualIpPool, VpnSession, VpnServer
+        |   |-- storage/                 # Department file vaults with atomic writes and path traversal defense
+        |   |-- tunnel/                  # Split tunneling and full tunneling engines
+        |   |-- ui/                      # Ivory Atelier unified client shell, components, BackendVpnServiceAdapter
+        |   `-- util/                    # Authentic OS/network hardware telemetry
         `-- resources/
-            |-- config.properties   # Production runtime & MySQL configuration
-            `-- styles/
-                `-- officevpn-theme.css # JavaFX enterprise dark cyber-defense CSS theme
+            |-- config.properties        # Centralized runtime, subnet, path, and MySQL configuration
+            |-- i18n/messages.properties # Centralized user-facing UI strings & accessibility labels
+            |-- fonts/                   # Bundled OFL static fonts (Fraunces, Manrope, JetBrains Mono)
+            |-- styles/officevpn-theme.css
+            `-- ui/theme/ivory-atelier.css
 ```
 
 ---

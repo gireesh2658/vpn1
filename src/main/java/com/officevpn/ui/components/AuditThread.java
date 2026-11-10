@@ -70,7 +70,7 @@ public final class AuditThread extends Control {
     private final ObjectProperty<AuditCategory> activeFilter = new SimpleObjectProperty<>(null);
     private final StringProperty searchText = new SimpleStringProperty("");
     private final ObjectProperty<Runnable> onRefresh = new SimpleObjectProperty<>(() -> {});
-    private final ObjectProperty<Predicate<Path>> onExportCsv = new SimpleObjectProperty<>(p -> false);
+    private final ObjectProperty<Predicate<Path>> onExportCsv = new SimpleObjectProperty<>(_ -> false);
 
     public AuditThread() {
         getStyleClass().setAll("audit-thread");
@@ -78,7 +78,7 @@ public final class AuditThread extends Control {
         setAccessibleRole(AccessibleRole.LIST_VIEW);
         setAccessibleText("Audit Thread cryptographic timeline");
 
-        loading.addListener((obs, o, n) -> pseudoClassStateChanged(PC_LOADING, Boolean.TRUE.equals(n)));
+        loading.addListener((_, _, n) -> pseudoClassStateChanged(PC_LOADING, Boolean.TRUE.equals(n)));
     }
 
     public void bindService(VpnClientService service, Consumer<String> toastCallback) {
@@ -87,7 +87,7 @@ public final class AuditThread extends Control {
         chainStatus.bind(service.auditChainStatusProperty());
 
         Runnable sync = () -> events.setAll(service.auditEvents());
-        service.auditEvents().addListener((ListChangeListener<AuditEventItem>) c -> sync.run());
+        service.auditEvents().addListener((ListChangeListener<AuditEventItem>) _ -> sync.run());
         sync.run();
 
         onRefresh.set(service::refreshAuditLog);
@@ -142,7 +142,7 @@ public final class AuditThread extends Control {
 
             Button refreshBtn = new Button("Refresh");
             refreshBtn.setGraphic(Icons.ink(Feather.REFRESH_CW, 13));
-            refreshBtn.setOnAction(e -> {
+            refreshBtn.setOnAction(_ -> {
                 Runnable r = control.onRefreshProperty().get();
                 if (r != null) r.run();
             });
@@ -150,7 +150,7 @@ public final class AuditThread extends Control {
             Button exportBtn = new Button("Export CSV");
             exportBtn.getStyleClass().add("ia-btn-marigold");
             exportBtn.setGraphic(Icons.ink(Feather.DOWNLOAD, 13));
-            exportBtn.setOnAction(e -> exportWithChooser(control));
+            exportBtn.setOnAction(_ -> exportWithChooser(control));
 
             Region sp = new Region();
             HBox.setHgrow(sp, Priority.ALWAYS);
@@ -163,12 +163,12 @@ public final class AuditThread extends Control {
             HBox.setHgrow(searchBox, Priority.ALWAYS);
 
             allBtn.getStyleClass().add("atlas-tab");
-            allBtn.setOnAction(e -> control.activeFilterProperty().set(null));
+            allBtn.setOnAction(_ -> control.activeFilterProperty().set(null));
             HBox filterPills = new HBox(6, allBtn);
             for (AuditCategory cat : AuditCategory.values()) {
                 Button b = new Button(cat.label());
                 b.getStyleClass().add("atlas-tab");
-                b.setOnAction(e -> control.activeFilterProperty().set(cat));
+                b.setOnAction(_ -> control.activeFilterProperty().set(cat));
                 filterBtns.put(cat, b);
                 filterPills.getChildren().add(b);
             }
@@ -191,13 +191,13 @@ public final class AuditThread extends Control {
             shimmerAnim.setCycleCount(Timeline.INDEFINITE);
             Motion.bindLifecycle(shimmerAnim, control);
 
-            control.events().addListener((ListChangeListener<AuditEventItem>) c -> rebuild());
-            control.loadingProperty().addListener((obs, o, n) -> rebuild());
-            control.activeFilterProperty().addListener((obs, o, n) -> {
+            control.events().addListener((ListChangeListener<AuditEventItem>) _ -> rebuild());
+            control.loadingProperty().addListener((_, _, _) -> rebuild());
+            control.activeFilterProperty().addListener((_, _, _) -> {
                 syncFilterButtons();
                 rebuild();
             });
-            control.searchTextProperty().addListener((obs, o, n) -> rebuild());
+            control.searchTextProperty().addListener((_, _, _) -> rebuild());
 
             syncFilterButtons();
             rebuild();
@@ -258,7 +258,7 @@ public final class AuditThread extends Control {
 
             Map<String, List<AuditEventItem>> byDay = new LinkedHashMap<>();
             for (AuditEventItem item : visible) {
-                byDay.computeIfAbsent(item.dayGroup(), k -> new ArrayList<>()).add(item);
+                byDay.computeIfAbsent(item.dayGroup(), _ -> new ArrayList<>()).add(item);
             }
 
             for (var entry : byDay.entrySet()) {
@@ -359,7 +359,7 @@ public final class AuditThread extends Control {
                 bar.setBackground(new javafx.scene.layout.Background(
                         new javafx.scene.layout.BackgroundFill(lg, new javafx.scene.layout.CornerRadii(10), Insets.EMPTY)));
             };
-            shimmerOffset.addListener((obs, o, n) -> paintShimmer.run());
+            shimmerOffset.addListener((_, _, _) -> paintShimmer.run());
             paintShimmer.run();
             return new HBox(12, dot, bar);
         }

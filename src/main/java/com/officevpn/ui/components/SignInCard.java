@@ -2,7 +2,6 @@ package com.officevpn.ui.components;
 
 import com.officevpn.ui.service.VpnClientService;
 import com.officevpn.ui.service.VpnModels.AuthResult;
-import com.officevpn.ui.theme.Fonts;
 import com.officevpn.ui.theme.Icons;
 import com.officevpn.ui.theme.Motion;
 import com.officevpn.ui.theme.Tokens;
@@ -13,7 +12,6 @@ import javafx.application.Platform;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.css.PseudoClass;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.AccessibleRole;
 import javafx.scene.Node;
@@ -27,8 +25,6 @@ import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 import org.kordamp.ikonli.feather.Feather;
@@ -51,10 +47,10 @@ public final class SignInCard extends Control {
     private static final PseudoClass PC_OTP_ERROR = PseudoClass.getPseudoClass("otp-error");
 
     private final ObjectProperty<CredentialVerifier> verifier = new SimpleObjectProperty<>(
-            (u, p, otp) -> CompletableFuture.completedFuture(new AuthResult("123456".equals(otp), false,
-                    "123456".equals(otp) ? "Authenticated cleanly" : "Invalid 6-digit authenticator code")));
-    private final ObjectProperty<Consumer<String>> onSsoRequested = new SimpleObjectProperty<>(provider -> {});
-    private final ObjectProperty<Consumer<AuthResult>> onAuthenticated = new SimpleObjectProperty<>(res -> {});
+            (_, _, _) -> CompletableFuture.completedFuture(new AuthResult(false, false,
+                    "Bind SignInCard to a live VpnClientService before authenticating")));
+    private final ObjectProperty<Consumer<String>> onSsoRequested = new SimpleObjectProperty<>(_ -> {});
+    private final ObjectProperty<Consumer<AuthResult>> onAuthenticated = new SimpleObjectProperty<>(_ -> {});
 
     public SignInCard() {
         getStyleClass().setAll("signin-card");
@@ -97,11 +93,11 @@ public final class SignInCard extends Control {
     private static final class SignInCardSkin extends SkinBase<SignInCard> {
 
         private final VBox root = new VBox(14);
-        private final TextField userField = new TextField("a.mehta@officevpn.local");
+        private final TextField userField = new TextField();
         private final PasswordField passField = new PasswordField();
         private final HBox otpRow = new HBox(6);
         private final TextField[] otpCells = new TextField[6];
-        private final Label feedbackLabel = new Label("Enter 6-digit authenticator code (demo: 123456)");
+        private final Label feedbackLabel = new Label("Enter your 6-digit authenticator code (if MFA is enabled)");
         private final Button signInBtn = new Button("Verify & Authenticate");
 
         SignInCardSkin(SignInCard control) {
@@ -113,61 +109,31 @@ public final class SignInCard extends Control {
             Label title = new Label("Sign in to Corporate Gateway");
             title.getStyleClass().add("ia-display-md");
 
-            Label sub = new Label("Authenticate workspace credentials and hardware OTP");
+            Label sub = new Label("Sign in with your Office VPN employee account");
             sub.getStyleClass().add("ia-subtitle");
 
-            Label uLbl = new Label("Workspace Email");
+            Label uLbl = new Label("Workspace Username");
             uLbl.getStyleClass().add("ia-section-label");
-            userField.setPromptText("employee@officevpn.local");
+            userField.setPromptText("Employee username");
 
             Label pLbl = new Label("Passphrase");
             pLbl.getStyleClass().add("ia-section-label");
-            passField.setText("Staff#Keycard2026!");
+            passField.setPromptText("Account passphrase");
 
-            Label oLbl = new Label("6-Digit Authenticator OTP");
+            Label oLbl = new Label("6-Digit MFA Code (Optional)");
             oLbl.getStyleClass().add("ia-section-label");
 
             setupOtpCells();
 
+            feedbackLabel.setText("Leave the 6 digits blank if MFA is OFF for your account. Enter your Authenticator app code only if 2FA is enabled.");
             feedbackLabel.getStyleClass().add("ia-subtitle");
             feedbackLabel.setWrapText(true);
 
             signInBtn.getStyleClass().add("ia-btn-marigold");
             signInBtn.setGraphic(Icons.ink(Feather.SHIELD, 14));
             signInBtn.setMaxWidth(Double.MAX_VALUE);
-            signInBtn.setOnAction(e -> submitCredentials());
-
-            Button oktaBtn = new Button("Okta OIDC");
-            oktaBtn.setGraphic(Icons.lilac(Feather.KEY, 13));
-            oktaBtn.setMaxWidth(Double.MAX_VALUE);
-            HBox.setHgrow(oktaBtn, Priority.ALWAYS);
-            oktaBtn.setOnAction(e -> {
-                var sso = control.onSsoRequestedProperty().get();
-                if (sso != null) sso.accept("Okta Enterprise OIDC");
-            });
-
-            Button entraBtn = new Button("Microsoft Entra");
-            entraBtn.setGraphic(Icons.peacock(Feather.GLOBE, 13));
-            entraBtn.setMaxWidth(Double.MAX_VALUE);
-            HBox.setHgrow(entraBtn, Priority.ALWAYS);
-            entraBtn.setOnAction(e -> {
-                var sso = control.onSsoRequestedProperty().get();
-                if (sso != null) sso.accept("Microsoft Entra ID");
-            });
-
-            HBox divider = new HBox(8);
-            divider.setAlignment(Pos.CENTER);
-            Region r1 = new Region();
-            Region r2 = new Region();
-            r1.setPrefHeight(1); r1.setMaxHeight(1);
-            r2.setPrefHeight(1); r2.setMaxHeight(1);
-            r1.setStyle("-fx-background-color: #E6DCC6;"); r2.setStyle("-fx-background-color: #E6DCC6;");
-            HBox.setHgrow(r1, Priority.ALWAYS); HBox.setHgrow(r2, Priority.ALWAYS);
-            Label orLbl = new Label("OR ENTERPRISE SSO");
-            orLbl.getStyleClass().add("ia-section-label");
-            divider.getChildren().addAll(r1, orLbl, r2);
-
-            HBox ssoRow = new HBox(10, oktaBtn, entraBtn);
+            signInBtn.setOnAction(_ -> submitCredentials());
+            passField.setOnAction(_ -> submitCredentials());
 
             root.getChildren().addAll(
                     badge, title, sub,
@@ -175,24 +141,22 @@ public final class SignInCard extends Control {
                     pLbl, passField,
                     oLbl, otpRow,
                     feedbackLabel,
-                    signInBtn,
-                    divider, ssoRow
+                    signInBtn
             );
             getChildren().add(root);
         }
 
         private void setupOtpCells() {
             otpRow.setAlignment(Pos.CENTER_LEFT);
-            String prefill = "123456";
             for (int i = 0; i < 6; i++) {
                 final int idx = i;
-                TextField cell = new TextField(String.valueOf(prefill.charAt(i)));
+                TextField cell = new TextField("");
                 cell.getStyleClass().add("otp-cell");
                 cell.setPrefSize(44, 48);
                 cell.setMinSize(36, 44);
                 cell.setAccessibleText("OTP digit " + (i + 1) + " of 6");
 
-                cell.textProperty().addListener((obs, oldVal, newVal) -> {
+                cell.textProperty().addListener((_, _, newVal) -> {
                     clearOtpError();
                     if (newVal == null) return;
                     String digitsOnly = newVal.replaceAll("\\D+", "");
@@ -303,7 +267,7 @@ public final class SignInCard extends Control {
     }
 
     /**
-     * Exposes programmatic error shake trigger for ComponentGallery / tests.
+     * Exposes programmatic error shake trigger for unit tests.
      */
     public void showErrorShake(String reason) {
         if (getSkin() instanceof SignInCardSkin skin) {

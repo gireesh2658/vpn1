@@ -127,7 +127,7 @@ public final class ConsoleClient implements AutoCloseable {
             String portInput = scanner.nextLine().trim();
             int port = portInput.isEmpty() ? defaultPort : Integer.parseInt(portInput);
 
-            System.out.print("Username (e.g. alice_fin, gireesh, admin): ");
+            System.out.print("Username: ");
             String username = scanner.nextLine().trim();
 
             System.out.print("Password: ");

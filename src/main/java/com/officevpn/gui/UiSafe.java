@@ -1,5 +1,6 @@
 package com.officevpn.gui;
 
+import com.officevpn.config.Messages;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.Node;
@@ -12,9 +13,11 @@ import javafx.scene.control.Label;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
+import javafx.scene.control.TextArea;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
+import javafx.scene.layout.Region;
 import javafx.stage.Window;
 
 import java.net.URL;
@@ -24,7 +27,7 @@ import java.util.function.Function;
 
 /**
  * Shared JavaFX UI safety, styling, table configuration, clipboard, and dialog utilities.
- * Neutralizes control characters / directional overrides and applies the Office VPN dark theme consistently.
+ * Neutralizes control characters / directional overrides and applies the Ivory Atelier theme consistently.
  */
 public final class UiSafe {
 
@@ -61,6 +64,7 @@ public final class UiSafe {
         if (scene == null) {
             return;
         }
+        com.officevpn.ui.theme.IvoryTheme.installBase();
         URL cssUrl = UiSafe.class.getResource(THEME_CSS_RESOURCE);
         if (cssUrl != null) {
             String urlStr = cssUrl.toExternalForm();
@@ -74,6 +78,7 @@ public final class UiSafe {
         if (pane == null) {
             return;
         }
+        com.officevpn.ui.theme.IvoryTheme.installBase();
         URL cssUrl = UiSafe.class.getResource(THEME_CSS_RESOURCE);
         if (cssUrl != null) {
             String urlStr = cssUrl.toExternalForm();
@@ -91,7 +96,7 @@ public final class UiSafe {
             return;
         }
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-        Label placeholder = new Label("No records to display");
+        Label placeholder = new Label(Messages.get("common.table.empty"));
         placeholder.getStyleClass().add("muted-label");
         table.setPlaceholder(placeholder);
     }
@@ -122,7 +127,7 @@ public final class UiSafe {
         col.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty(
                 text(textExtractor.apply(cellData.getValue()), 64)
         ));
-        col.setCellFactory(tc -> new TableCell<>() {
+        col.setCellFactory(_ -> new TableCell<>() {
             @Override
             protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
@@ -236,11 +241,68 @@ public final class UiSafe {
         }
         alert.setTitle(title);
         alert.setHeaderText(header);
-        Label body = new Label(message != null ? message : "");
-        body.setWrapText(true);
-        body.setMaxWidth(440);
-        alert.getDialogPane().setContent(body);
-        applyTheme(alert.getDialogPane());
+        alert.setResizable(true);
+
+        String bodyText = message != null ? message : "";
+        DialogPane pane = alert.getDialogPane();
+        pane.setMinWidth(420);
+        pane.setPrefWidth(520);
+        pane.setMaxWidth(560);
+
+        if (needsScrollableArea(bodyText)) {
+            TextArea area = new TextArea(bodyText);
+            area.setEditable(false);
+            area.setWrapText(true);
+            area.setPrefWidth(480);
+            area.setMaxWidth(520);
+            area.setPrefRowCount(Math.min(10, Math.max(5, countWrappedRows(bodyText, 58))));
+            area.getStyleClass().add("mono-text");
+            pane.setContent(area);
+        } else {
+            Label body = new Label(bodyText);
+            body.setWrapText(true);
+            body.setPrefWidth(460);
+            body.setMaxWidth(500);
+            body.setMinHeight(Region.USE_PREF_SIZE);
+            pane.setContent(body);
+        }
+
+        applyTheme(pane);
         return alert;
+    }
+
+    private static boolean needsScrollableArea(String text) {
+        if (text.length() > 260) {
+            return true;
+        }
+        int run = 0;
+        int lines = 1;
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (ch == '\n') {
+                lines++;
+                run = 0;
+            } else if (Character.isWhitespace(ch)) {
+                run = 0;
+            } else {
+                run++;
+                if (run > 56) {
+                    return true;
+                }
+            }
+        }
+        return lines > 5;
+    }
+
+    private static int countWrappedRows(String text, int cols) {
+        int rows = 1;
+        int col = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n' || ++col >= cols) {
+                rows++;
+                col = 0;
+            }
+        }
+        return rows;
     }
 }

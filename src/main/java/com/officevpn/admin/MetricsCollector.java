@@ -1,7 +1,6 @@
 package com.officevpn.admin;
 
 import com.officevpn.db.DatabaseManager;
-import com.officevpn.server.SessionManager;
 import com.officevpn.server.VpnGatewayServer;
 
 import java.time.LocalDate;
@@ -16,17 +15,15 @@ import java.util.Objects;
 public final class MetricsCollector {
 
     private final DatabaseManager databaseManager;
-    private final SessionManager sessionManager;
     private volatile VpnGatewayServer gatewayServer;
     private final long initializedAt;
 
     public MetricsCollector(DatabaseManager databaseManager) {
-        this(databaseManager, null, null);
+        this(databaseManager, null);
     }
 
-    public MetricsCollector(DatabaseManager databaseManager, SessionManager sessionManager, VpnGatewayServer gatewayServer) {
+    public MetricsCollector(DatabaseManager databaseManager, VpnGatewayServer gatewayServer) {
         this.databaseManager = Objects.requireNonNull(databaseManager, "DatabaseManager cannot be null");
-        this.sessionManager = sessionManager;
         this.gatewayServer = gatewayServer;
         this.initializedAt = System.currentTimeMillis();
     }
@@ -39,9 +36,6 @@ public final class MetricsCollector {
      * Returns count of currently authenticated active VPN sessions.
      */
     public int getActiveSessionCount() {
-        if (sessionManager != null) {
-            return sessionManager.getActiveSessionCount();
-        }
         if (gatewayServer != null) {
             return gatewayServer.getActiveSessions().size();
         }

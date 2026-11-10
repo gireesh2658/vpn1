@@ -6,12 +6,16 @@ import com.officevpn.admin.DeviceManager;
 import com.officevpn.admin.MetricsCollector;
 import com.officevpn.admin.ServerManager;
 import com.officevpn.config.ConfigUtil;
+import com.officevpn.config.Messages;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.gui.UiSafe;
 import com.officevpn.model.AuditVerifyResult;
 import com.officevpn.protocol.VpnPacket;
 import com.officevpn.server.ServerEventListener;
 import com.officevpn.server.VpnGatewayServer;
+import com.officevpn.ui.AppShell;
+import com.officevpn.ui.service.BackendVpnServiceAdapter;
+import com.officevpn.ui.theme.IvoryTheme;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Platform;
@@ -29,6 +33,8 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import javafx.util.Duration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -38,6 +44,8 @@ import java.util.concurrent.CompletableFuture;
  * JavaFX Headquarters Administrator Control Deck &amp; Multi-View Gateway Console.
  */
 public final class AdminDashboardFrame {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(AdminDashboardFrame.class);
 
     private final Stage stage;
     private final DatabaseManager db;
@@ -62,13 +70,17 @@ public final class AdminDashboardFrame {
     private final StackPane contentHost = new StackPane();
     private final Map<String, Button> navButtons = new LinkedHashMap<>();
 
-    private final Label serverStatePill = new Label("STOPPED");
+    private final Label serverStatePill = new Label(Messages.get("admin.state.stopped"));
     private final Label alertsNavBadge = new Label("0");
     private final Label clientsNavBadge = new Label("0");
     private final Label dbBadge = new Label("MySQL Pool");
-    private final Button startBtn = new Button("Start Gateway");
-    private final Button stopBtn = new Button("Stop Gateway");
-    private final Button restartBtn = new Button("Restart");
+    private final Button startGatewayButton = new Button(Messages.get("admin.button.startGateway"));
+    private final Button stopGatewayButton = new Button(Messages.get("admin.button.stopGateway"));
+    private final Button restartGatewayButton = new Button(Messages.get("admin.button.restartGateway"));
+    private final Button openAtelierButton = new Button(Messages.get("admin.button.openAtelier"));
+
+    private Stage atelierStage;
+    private BackendVpnServiceAdapter atelierService;
 
     private final ServerEventListener serverListener;
     private Timeline refreshTimeline;
@@ -84,10 +96,13 @@ public final class AdminDashboardFrame {
         this.stage = stage;
         this.db = db;
         this.gatewayServer = gatewayServer;
-        this.adminUsername = (adminUsername != null && !adminUsername.isBlank()) ? adminUsername : "admin_hq";
+        if (adminUsername == null || adminUsername.isBlank()) {
+            throw new IllegalArgumentException("Authenticated administrator username is required");
+        }
+        this.adminUsername = adminUsername.trim();
 
         this.serverManager = new ServerManager(gatewayServer);
-        this.metricsCollector = new MetricsCollector(db, null, gatewayServer);
+        this.metricsCollector = new MetricsCollector(db, gatewayServer);
         this.alertManager = new AlertManager(db);
         this.deviceManager = new DeviceManager(db);
         this.configManager = new ConfigManager(db, alertManager);
@@ -95,7 +110,7 @@ public final class AdminDashboardFrame {
         this.overviewPanel = new OverviewPanel(db, metricsCollector, alertManager, gatewayServer);
         this.connectedClientsPanel = new ConnectedClientsPanel(gatewayServer, this.adminUsername);
         this.userManagementPanel = new UserManagementPanel(db, gatewayServer, this.adminUsername, this::refreshAllLightweight);
-        this.devicesPanel = new DevicesPanel(db, deviceManager);
+        this.devicesPanel = new DevicesPanel(db, deviceManager, this.adminUsername);
         this.alertsPanel = new AlertsPanel(alertManager, this::updateTopAndNavBadges);
         this.configPanel = new ConfigPanel(configManager, this.adminUsername);
         this.auditLogPanel = new AuditLogPanel(db, alertManager);
@@ -124,13 +139,13 @@ public final class AdminDashboardFrame {
         root.setTop(buildTopBar());
 
         contentHost.setPadding(new Insets(0));
-        switchView("Overview", overviewPanel);
+        switchView(Messages.get("admin.nav.overview"), overviewPanel);
         root.setCenter(contentHost);
 
         Scene scene = new Scene(root, 1280, 820);
         UiSafe.applyTheme(scene);
 
-        stage.setTitle("Office VPN System — Headquarters Governance Deck (" + adminUsername + ")");
+        stage.setTitle(Messages.format("app.title.admin.dashboard", adminUsername));
         stage.setMinWidth(1040);
         stage.setMinHeight(700);
         stage.setScene(scene);
@@ -156,32 +171,32 @@ public final class AdminDashboardFrame {
 
         VBox brand = new VBox(3);
         brand.getStyleClass().add("brand-box");
-        Label bTitle = new Label("OFFICE VPN HQ");
+        Label bTitle = new Label(Messages.get("brand.admin.title"));
         bTitle.getStyleClass().add("brand-title");
-        Label bSub = new Label("OFFICE-VPN-2.0  ·  MYSQL 8+");
+        Label bSub = new Label(Messages.get("brand.admin.subtitle"));
         bSub.getStyleClass().add("brand-subtitle");
         brand.getChildren().addAll(bTitle, bSub);
 
-        Label secCore = new Label("COMMAND & TELEMETRY");
+        Label secCore = new Label(Messages.get("admin.nav.section.command"));
         secCore.getStyleClass().add("nav-section-label");
 
-        Button navOverview = makeNavButton("Overview", overviewPanel, null);
-        Button navClients = makeNavButton("Connected Clients", connectedClientsPanel, clientsNavBadge);
-        Button navAlerts = makeNavButton("Security Alerts", alertsPanel, alertsNavBadge);
+        Button navOverview = makeNavButton(Messages.get("admin.nav.overview"), overviewPanel, null);
+        Button navClients = makeNavButton(Messages.get("admin.nav.clients"), connectedClientsPanel, clientsNavBadge);
+        Button navAlerts = makeNavButton(Messages.get("admin.nav.alerts"), alertsPanel, alertsNavBadge);
 
-        Label secGov = new Label("GOVERNANCE & POLICY");
+        Label secGov = new Label(Messages.get("admin.nav.section.governance"));
         secGov.getStyleClass().add("nav-section-label");
 
-        Button navUsers = makeNavButton("User Management", userManagementPanel, null);
-        Button navDevices = makeNavButton("Trusted Devices", devicesPanel, null);
-        Button navConfig = makeNavButton("Configuration", configPanel, null);
+        Button navUsers = makeNavButton(Messages.get("admin.nav.users"), userManagementPanel, null);
+        Button navDevices = makeNavButton(Messages.get("admin.nav.devices"), devicesPanel, null);
+        Button navConfig = makeNavButton(Messages.get("admin.nav.config"), configPanel, null);
 
-        Label secSec = new Label("FORENSICS & WIRE");
+        Label secSec = new Label(Messages.get("admin.nav.section.forensics"));
         secSec.getStyleClass().add("nav-section-label");
 
-        Button navAudit = makeNavButton("Audit Trail", auditLogPanel, null);
-        Button navConsole = makeNavButton("Server Console", serverLogPanel, null);
-        Button navSniffer = makeNavButton("Packet Sniffer", packetMonitorPanel, null);
+        Button navAudit = makeNavButton(Messages.get("admin.nav.audit"), auditLogPanel, null);
+        Button navConsole = makeNavButton(Messages.get("admin.nav.console"), serverLogPanel, null);
+        Button navSniffer = makeNavButton(Messages.get("admin.nav.sniffer"), packetMonitorPanel, null);
 
         Region flex = new Region();
         VBox.setVgrow(flex, Priority.ALWAYS);
@@ -219,7 +234,7 @@ public final class AdminDashboardFrame {
             btn.setText(label);
         }
 
-        btn.setOnAction(e -> switchView(label, targetView));
+        btn.setOnAction(_ -> switchView(label, targetView));
         navButtons.put(label, btn);
         return btn;
     }
@@ -235,22 +250,40 @@ public final class AdminDashboardFrame {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        startBtn.getStyleClass().add("btn-success");
-        startBtn.setOnAction(e -> startGatewayAsync());
+        startGatewayButton.getStyleClass().add("btn-success");
+        Messages.configureAccessibleControl(startGatewayButton,
+                Messages.get("admin.button.startGateway"),
+                Messages.get("admin.tooltip.startGateway"));
+        startGatewayButton.setOnAction(_ -> startGatewayAsync());
 
-        stopBtn.getStyleClass().add("btn-danger");
-        stopBtn.setOnAction(e -> stopGatewayAsync());
+        stopGatewayButton.getStyleClass().add("btn-danger");
+        Messages.configureAccessibleControl(stopGatewayButton,
+                Messages.get("admin.button.stopGateway"),
+                Messages.get("admin.tooltip.stopGateway"));
+        stopGatewayButton.setOnAction(_ -> stopGatewayAsync());
 
-        restartBtn.getStyleClass().add("btn-warning");
-        restartBtn.setOnAction(e -> restartGatewayAsync());
+        restartGatewayButton.getStyleClass().add("btn-warning");
+        Messages.configureAccessibleControl(restartGatewayButton,
+                Messages.get("admin.button.restartGateway"),
+                Messages.get("admin.tooltip.restartGateway"));
+        restartGatewayButton.setOnAction(_ -> restartGatewayAsync());
 
-        Button refreshAllBtn = new Button("Refresh All");
-        refreshAllBtn.getStyleClass().add("btn-secondary");
-        refreshAllBtn.setOnAction(e -> refreshAllViews());
+        Button refreshAllButton = new Button(Messages.get("admin.button.refreshAll"));
+        refreshAllButton.getStyleClass().add("btn-secondary");
+        Messages.configureAccessibleControl(refreshAllButton,
+                Messages.get("admin.button.refreshAll"),
+                Messages.get("admin.tooltip.refreshAll"));
+        refreshAllButton.setOnAction(_ -> refreshAllViews());
+
+        openAtelierButton.getStyleClass().add("btn-secondary");
+        Messages.configureAccessibleControl(openAtelierButton,
+                Messages.get("admin.button.openAtelier"),
+                Messages.get("admin.tooltip.openAtelier"));
+        openAtelierButton.setOnAction(_ -> handleOpenAtelierGovernance());
 
         topbar.getChildren().addAll(
                 serverStatePill, dbBadge, spacer,
-                startBtn, stopBtn, restartBtn, refreshAllBtn
+                startGatewayButton, stopGatewayButton, restartGatewayButton, refreshAllButton, openAtelierButton
         );
         return topbar;
     }
@@ -292,6 +325,10 @@ public final class AdminDashboardFrame {
                     devicesPanel.refresh();
                     alertsPanel.refresh();
                     updateTopAndNavBadges();
+                    if (atelierService != null) {
+                        atelierService.syncRosterFromGateway();
+                        atelierService.refreshAuditLog();
+                    }
                 });
             }
 
@@ -302,16 +339,42 @@ public final class AdminDashboardFrame {
         };
     }
 
+    private void handleOpenAtelierGovernance() {
+        if (atelierStage != null && atelierStage.isShowing()) {
+            atelierStage.toFront();
+            return;
+        }
+        atelierService = new BackendVpnServiceAdapter(null, null, db, gatewayServer, this.adminUsername);
+        AppShell shell = new AppShell(atelierService);
+        shell.switchTo(AppShell.Section.ADMIN);
+        Scene scene = new Scene(shell, 1220, 800);
+        IvoryTheme.apply(scene);
+
+        atelierStage = new Stage();
+        atelierStage.setTitle(Messages.format("app.title.admin.atelier", adminUsername));
+        atelierStage.setMinWidth(960);
+        atelierStage.setMinHeight(640);
+        atelierStage.setScene(scene);
+        atelierStage.setOnHidden(_ -> {
+            shell.close();
+            if (atelierService != null) {
+                atelierService.close();
+                atelierService = null;
+            }
+        });
+        atelierStage.show();
+    }
+
     private void startGatewayAsync() {
         int port = ConfigUtil.getPort();
-        startBtn.setDisable(true);
+        startGatewayButton.setDisable(true);
         CompletableFuture.runAsync(() -> {
             try {
                 serverManager.startServer(port);
             } catch (Exception ex) {
                 throw new IllegalStateException(ex.getMessage(), ex);
             }
-        }).whenComplete((v, err) -> Platform.runLater(() -> {
+        }).whenComplete((_, err) -> Platform.runLater(() -> {
             if (err != null) {
                 Throwable cause = err.getCause() != null ? err.getCause() : err;
                 UiSafe.showError(stage, "Gateway Start Failed", cause.getMessage());
@@ -322,7 +385,7 @@ public final class AdminDashboardFrame {
     }
 
     private void stopGatewayAsync() {
-        stopBtn.setDisable(true);
+        stopGatewayButton.setDisable(true);
         CompletableFuture.runAsync(serverManager::stopServer).thenRun(() -> Platform.runLater(() -> {
             updateServerControlStates();
             refreshAllViews();
@@ -331,14 +394,14 @@ public final class AdminDashboardFrame {
 
     private void restartGatewayAsync() {
         int port = ConfigUtil.getPort();
-        restartBtn.setDisable(true);
+        restartGatewayButton.setDisable(true);
         CompletableFuture.runAsync(() -> {
             try {
                 serverManager.restartServer(port);
             } catch (Exception ex) {
                 throw new IllegalStateException(ex.getMessage(), ex);
             }
-        }).whenComplete((v, err) -> Platform.runLater(() -> {
+        }).whenComplete((_, err) -> Platform.runLater(() -> {
             if (err != null) {
                 Throwable cause = err.getCause() != null ? err.getCause() : err;
                 UiSafe.showError(stage, "Gateway Restart Failed", cause.getMessage());
@@ -350,16 +413,16 @@ public final class AdminDashboardFrame {
 
     private void updateServerControlStates() {
         boolean running = gatewayServer.isRunning();
-        startBtn.setDisable(running);
-        stopBtn.setDisable(!running);
-        restartBtn.setDisable(!running);
+        startGatewayButton.setDisable(running);
+        stopGatewayButton.setDisable(!running);
+        restartGatewayButton.setDisable(!running);
 
         serverStatePill.getStyleClass().removeAll("pill-success", "pill-danger", "pill-muted");
         if (running) {
-            serverStatePill.setText("GATEWAY LIVE  :" + gatewayServer.getBoundPort());
+            serverStatePill.setText(Messages.format("admin.state.live", String.valueOf(gatewayServer.getBoundPort())));
             serverStatePill.getStyleClass().add("pill-success");
         } else {
-            serverStatePill.setText("GATEWAY STOPPED");
+            serverStatePill.setText(Messages.get("admin.state.stopped"));
             serverStatePill.getStyleClass().add("pill-danger");
         }
         updateTopAndNavBadges();
@@ -398,7 +461,7 @@ public final class AdminDashboardFrame {
     }
 
     private void startAutoRefreshLoop() {
-        refreshTimeline = new Timeline(new KeyFrame(Duration.seconds(2), e -> {
+        refreshTimeline = new Timeline(new KeyFrame(Duration.seconds(2), _ -> {
             overviewPanel.refresh();
             connectedClientsPanel.refresh();
             updateServerControlStates();
@@ -427,18 +490,31 @@ public final class AdminDashboardFrame {
             return;
         }
         shutDownStarted = true;
+        if (atelierStage != null) {
+            atelierStage.close();
+        }
+        if (atelierService != null) {
+            atelierService.close();
+            atelierService = null;
+        }
         if (refreshTimeline != null) {
             refreshTimeline.stop();
         }
         try {
             gatewayServer.removeServerEventListener(serverListener);
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            LOGGER.debug("Error detaching server event listener on shutdown: {}", ex.getMessage());
+        }
         try {
             gatewayServer.stop();
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            LOGGER.warn("Error stopping gateway server on shutdown: {}", ex.getMessage());
+        }
         try {
             db.close();
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            LOGGER.warn("Error closing database pool on shutdown: {}", ex.getMessage());
+        }
         Platform.exit();
     }
 }

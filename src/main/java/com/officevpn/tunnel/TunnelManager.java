@@ -28,8 +28,10 @@ public final class TunnelManager {
 
     private volatile TunnelMode mode;
     private final Set<String> officeDomains = new CopyOnWriteArraySet<>();
-    private final List<String> officeSubnets = List.of("10.8.0.0/24", "10.9.0.0/24");
-    private final List<String> bypassRoutes = List.of("127.0.0.1", "localhost", "::1", "192.168.1.200 (LAN Printer)");
+    private final List<String> officeSubnets = new ArrayList<>(ConfigUtil.getOfficeSubnets());
+    private final List<String> bypassRoutes = new ArrayList<>(ConfigUtil.getTunnelBypassRoutes());
+    private final String subnetPrefix = ConfigUtil.getSubnetPrefix();
+    private final String branchSubnetPrefix = ConfigUtil.getBranchSubnetPrefix();
 
     public TunnelManager() {
         this(resolveInitialMode());
@@ -109,11 +111,7 @@ public final class TunnelManager {
         if (ip == null || ip.isBlank()) {
             return false;
         }
-        // Subnets 10.8.0.0/24 (HQ) and 10.9.0.0/24 (Branch)
-        if (ip.startsWith("10.8.0.") || ip.startsWith("10.9.0.")) {
-            return true;
-        }
-        return false;
+        return ip.startsWith(subnetPrefix) || ip.startsWith(branchSubnetPrefix);
     }
 
     public List<String> getOfficeRoutes() {

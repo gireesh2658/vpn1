@@ -33,7 +33,7 @@ public final class VpnServer implements AutoCloseable {
     }
 
     public VpnServer(int port) {
-        this(port, new DatabaseManager(), new VaultManager(Path.of("server_vaults")), resolveServerIdentity());
+        this(port, new DatabaseManager(), new VaultManager(Path.of(ConfigUtil.getVaultRootDir())), resolveServerIdentity());
     }
 
     public VpnServer(int port, DatabaseManager db, VaultManager vaultManager, ServerIdentity identity) {
@@ -45,11 +45,6 @@ public final class VpnServer implements AutoCloseable {
     }
 
     public static ServerIdentity resolveServerIdentity() {
-        if (Boolean.getBoolean("officevpn.demo")) {
-            LOGGER.info("Starting with in-memory ephemeral server identity (-Dofficevpn.demo=true)");
-            return ServerIdentity.createEphemeral();
-        }
-
         char[] passphrase = null;
         String envPass = System.getenv("OFFICEVPN_KEYSTORE_PASS");
         if (envPass != null && !envPass.isBlank()) {
@@ -63,7 +58,7 @@ public final class VpnServer implements AutoCloseable {
         if (passphrase == null || passphrase.length == 0) {
             throw new IllegalStateException(
                     "Server identity keystore passphrase required. Provide via OFFICEVPN_KEYSTORE_PASS environment variable, " +
-                    "-Dofficevpn.keystore.pass system property, interactive console, or run with -Dofficevpn.demo=true for ephemeral testing."
+                    "-Dofficevpn.keystore.pass system property, or interactive console."
             );
         }
 
@@ -133,13 +128,13 @@ public final class VpnServer implements AutoCloseable {
     }
 
     public static void printBanner(int port, String fingerprint) {
-        System.out.println("========================================================================");
-        System.out.println("       OFFICE VPN GATEWAY SERVER - ENTERPRISE ZERO TRUST                ");
-        System.out.println("       Runtime: Java " + System.getProperty("java.version") + " (JDK 25 LTS)             ");
-        System.out.println("       Listening Port: " + port + " (Gateway Virtual IP: 10.8.0.1)        ");
-        System.out.println("       Protocol: OFFICE-VPN-2.0 (AES-256-GCM + Ephemeral ECDH + RSASSA-PSS)");
-        System.out.println("       Server Key Fingerprint: " + fingerprint);
-        System.out.println("========================================================================");
+        LOGGER.info("========================================================================");
+        LOGGER.info("       OFFICE VPN GATEWAY SERVER - ENTERPRISE ZERO TRUST");
+        LOGGER.info("       Runtime: Java {} | Port: {} | Gateway Virtual IP: {}",
+                System.getProperty("java.version"), port, VirtualIpPool.GATEWAY_SERVER_IP);
+        LOGGER.info("       Protocol: OFFICE-VPN-2.0 (AES-256-GCM + Ephemeral ECDH + RSASSA-PSS)");
+        LOGGER.info("       Server Key Fingerprint: {}", fingerprint);
+        LOGGER.info("========================================================================");
     }
 
     public static void main(String[] args) {

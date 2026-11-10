@@ -1,6 +1,5 @@
 package com.officevpn.ui.components;
 
-import com.officevpn.ui.service.MockVpnService;
 import com.officevpn.ui.service.VpnClientService;
 import com.officevpn.ui.service.VpnModels.ConnectionState;
 import com.officevpn.ui.theme.Fonts;
@@ -96,11 +95,11 @@ public final class KeycardGate extends Control {
         setAccessibleRole(AccessibleRole.BUTTON);
         setMinSize(320, Region.USE_PREF_SIZE);
 
-        connectionState.addListener((obs, o, n) -> syncPseudoClasses(n));
+        connectionState.addListener((_, _, n) -> syncPseudoClasses(n));
         syncPseudoClasses(connectionState.get());
         updateAccessibleText();
-        connectionState.addListener((obs, o, n) -> updateAccessibleText());
-        statusCaption.addListener((obs, o, n) -> updateAccessibleText());
+        connectionState.addListener((_, _, _) -> updateAccessibleText());
+        statusCaption.addListener((_, _, _) -> updateAccessibleText());
     }
 
     /**
@@ -110,7 +109,7 @@ public final class KeycardGate extends Control {
         if (service == null) return;
         connectionState.bind(service.connectionStateProperty());
         statusCaption.bind(service.statusCaptionProperty());
-        service.currentIdentityProperty().addListener((obs, o, id) -> {
+        service.currentIdentityProperty().addListener((_, _, id) -> {
             if (id != null) {
                 cardInitials.set(id.initials());
                 cardHolderName.set(id.displayName());
@@ -125,7 +124,7 @@ public final class KeycardGate extends Control {
             cardHolderRole.set(id.role());
             cardBadgeId.set(id.badgeId());
         }
-        service.selectedGatewayProperty().addListener((obs, o, gw) -> {
+        service.selectedGatewayProperty().addListener((_, _, gw) -> {
             if (gw != null) targetGatewayLabel.set(gw.city());
         });
         if (service.selectedGatewayProperty().get() != null) {
@@ -251,7 +250,7 @@ public final class KeycardGate extends Control {
             quickActionBtn.setFocusTraversable(false);
             quickActionBtn.setMinWidth(Region.USE_PREF_SIZE);
             quickActionBtn.getStyleClass().add("ia-btn-marigold");
-            quickActionBtn.setOnAction(e -> control.toggleFromKeyboard());
+            quickActionBtn.setOnAction(_ -> control.toggleFromKeyboard());
 
             titleLabel.setMinWidth(Region.USE_PREF_SIZE);
             statePill.setMinWidth(Region.USE_PREF_SIZE);
@@ -289,11 +288,11 @@ public final class KeycardGate extends Control {
             wireInteractions(control);
             bindStateUpdates(control);
 
-            stagePane.widthProperty().addListener((obs, o, n) -> layoutAndRedraw());
-            stagePane.heightProperty().addListener((obs, o, n) -> layoutAndRedraw());
-            cardProgress.addListener((obs, o, n) -> layoutAndRedraw());
-            holdArcProgress.addListener((obs, o, n) -> drawStageCanvas());
-            gateOpenProgress.addListener((obs, o, n) -> drawStageCanvas());
+            stagePane.widthProperty().addListener((_, _, _) -> layoutAndRedraw());
+            stagePane.heightProperty().addListener((_, _, _) -> layoutAndRedraw());
+            cardProgress.addListener((_, _, _) -> layoutAndRedraw());
+            holdArcProgress.addListener((_, _, _) -> drawStageCanvas());
+            gateOpenProgress.addListener((_, _, _) -> drawStageCanvas());
         }
 
         private void setupCardNode(KeycardGate control) {
@@ -430,7 +429,7 @@ public final class KeycardGate extends Control {
                     new KeyFrame(Duration.ZERO, new KeyValue(holdArcProgress, 0.0)),
                     new KeyFrame(Duration.millis(600), new KeyValue(holdArcProgress, 1.0))
             );
-            holdTimeline.setOnFinished(ev -> {
+            holdTimeline.setOnFinished(_ -> {
                 holdArcProgress.set(0.0);
                 animateCardTo(1.0);
                 Runnable c = control.onConnectRequested.get();
@@ -448,7 +447,7 @@ public final class KeycardGate extends Control {
 
         private void bindStateUpdates(KeycardGate control) {
             captionLabel.textProperty().bind(control.statusCaptionProperty());
-            control.connectionStateProperty().addListener((obs, o, n) -> applyStateVisuals(n));
+            control.connectionStateProperty().addListener((_, _, n) -> applyStateVisuals(n));
             applyStateVisuals(control.connectionStateProperty().get());
         }
 

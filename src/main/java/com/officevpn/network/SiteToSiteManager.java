@@ -131,7 +131,7 @@ public final class SiteToSiteManager {
     public synchronized void handleKeepalive(String peerId) {
         if (peerId == null) return;
         long now = System.currentTimeMillis();
-        peers.computeIfPresent(peerId, (k, p) -> {
+        peers.computeIfPresent(peerId, (_, p) -> {
             SiteToSitePeer updated = p.withStatus("ONLINE", now);
             databaseManager.updateSiteToSiteKeepalive(peerId, "ONLINE", now);
             return updated;

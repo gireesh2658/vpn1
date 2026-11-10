@@ -1,7 +1,6 @@
 package com.officevpn.ui.components;
 
 import com.officevpn.ui.service.VpnClientService;
-import com.officevpn.ui.service.VpnModels.ConnectionState;
 import com.officevpn.ui.service.VpnModels.HandshakeStation;
 import com.officevpn.ui.theme.Fonts;
 import com.officevpn.ui.theme.Icons;
@@ -73,8 +72,8 @@ public final class HandshakeLoom extends Control {
         setAccessibleRole(AccessibleRole.PROGRESS_INDICATOR);
         setMinSize(260, Region.USE_PREF_SIZE);
 
-        completedStations.addListener((obs, o, n) -> syncPseudoClasses());
-        failedStation.addListener((obs, o, n) -> syncPseudoClasses());
+        completedStations.addListener((_, _, _) -> syncPseudoClasses());
+        failedStation.addListener((_, _, _) -> syncPseudoClasses());
         syncPseudoClasses();
     }
 
@@ -160,7 +159,7 @@ public final class HandshakeLoom extends Control {
             loomPane.setPrefHeight(62);
             loomPane.setMaxWidth(Double.MAX_VALUE);
             loomPane.getChildren().add(loomCanvas);
-            loomPane.widthProperty().addListener((obs, o, n) -> {
+            loomPane.widthProperty().addListener((_, _, n) -> {
                 loomCanvas.setWidth(Math.max(120, n.doubleValue()));
                 loomCanvas.setHeight(62);
                 drawLoom();
@@ -172,7 +171,7 @@ public final class HandshakeLoom extends Control {
 
             retryBtn.getStyleClass().add("ia-btn-coral");
             retryBtn.setGraphic(Icons.coral(Feather.REFRESH_CW, 13));
-            retryBtn.setOnAction(e -> {
+            retryBtn.setOnAction(_ -> {
                 Runnable r = control.onRetryRequestedProperty().get();
                 if (r != null) r.run();
             });
@@ -198,9 +197,9 @@ public final class HandshakeLoom extends Control {
             };
             timer.bind();
 
-            control.completedStationsProperty().addListener((obs, o, n) -> drawLoom());
-            control.failedStationProperty().addListener((obs, o, n) -> syncFailureRow());
-            control.sealRadiusProperty().addListener((obs, o, n) -> drawLoom());
+            control.completedStationsProperty().addListener((_, _, _) -> drawLoom());
+            control.failedStationProperty().addListener((_, _, _) -> syncFailureRow());
+            control.sealRadiusProperty().addListener((_, _, _) -> drawLoom());
 
             syncFailureRow();
             drawLoom();

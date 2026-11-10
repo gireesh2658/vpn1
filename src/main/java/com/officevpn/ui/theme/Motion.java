@@ -153,24 +153,24 @@ public final class Motion {
         if (anchor == null) {
             return;
         }
-        REDUCE_MOTION.addListener((obs, o, n) -> evaluate.run());
-        anchor.visibleProperty().addListener((obs, o, n) -> evaluate.run());
-        anchor.sceneProperty().addListener((obs, oldScene, newScene) -> {
+        REDUCE_MOTION.addListener((_, _, _) -> evaluate.run());
+        anchor.visibleProperty().addListener((_, _, _) -> evaluate.run());
+        anchor.sceneProperty().addListener((_, _, newScene) -> {
             if (newScene != null) {
-                newScene.windowProperty().addListener((wObs, oldWin, newWin) -> {
+                newScene.windowProperty().addListener((_, _, newWin) -> {
                     if (newWin != null) {
-                        newWin.showingProperty().addListener((sObs, o, n) -> evaluate.run());
+                        newWin.showingProperty().addListener((_, _, _) -> evaluate.run());
                         if (newWin instanceof Stage st) {
-                            st.iconifiedProperty().addListener((iObs, o, n) -> evaluate.run());
+                            st.iconifiedProperty().addListener((_, _, _) -> evaluate.run());
                         }
                     }
                     evaluate.run();
                 });
                 Window w = newScene.getWindow();
                 if (w != null) {
-                    w.showingProperty().addListener((sObs, o, n) -> evaluate.run());
+                    w.showingProperty().addListener((_, _, _) -> evaluate.run());
                     if (w instanceof Stage st) {
-                        st.iconifiedProperty().addListener((iObs, o, n) -> evaluate.run());
+                        st.iconifiedProperty().addListener((_, _, _) -> evaluate.run());
                     }
                 }
             }
@@ -180,9 +180,9 @@ public final class Motion {
         if (current != null) {
             Window w = current.getWindow();
             if (w != null) {
-                w.showingProperty().addListener((sObs, o, n) -> evaluate.run());
+                w.showingProperty().addListener((_, _, _) -> evaluate.run());
                 if (w instanceof Stage st) {
-                    st.iconifiedProperty().addListener((iObs, o, n) -> evaluate.run());
+                    st.iconifiedProperty().addListener((_, _, _) -> evaluate.run());
                 }
             }
         }

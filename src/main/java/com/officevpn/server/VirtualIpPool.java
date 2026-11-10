@@ -1,5 +1,7 @@
 package com.officevpn.server;
 
+import com.officevpn.config.ConfigUtil;
+
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -18,9 +20,10 @@ import java.util.TreeMap;
  */
 public final class VirtualIpPool {
 
-    public static final String GATEWAY_SERVER_IP = "10.8.0.1";
+    public static final String GATEWAY_SERVER_IP = ConfigUtil.getGatewayVirtualIp();
     public static final int SUBNET_MIN_HOST = 2;
     public static final int SUBNET_MAX_HOST = 254;
+    private static final String SUBNET_PREFIX = ConfigUtil.getSubnetPrefix();
 
     public record Lease(String virtualIp, String username, String ownerToken) {}
 
@@ -63,7 +66,7 @@ public final class VirtualIpPool {
         }
 
         for (int host = SUBNET_MIN_HOST; host <= SUBNET_MAX_HOST; host++) {
-            String candidateIp = "10.8.0." + host;
+            String candidateIp = SUBNET_PREFIX + host;
             if (!ipToLeaseMap.containsKey(candidateIp)) {
                 Lease lease = new Lease(candidateIp, username, token);
                 ipToLeaseMap.put(candidateIp, lease);

@@ -76,8 +76,8 @@ public final class Toasts extends VBox {
         }
 
         PauseTransition autoHide = new PauseTransition(Duration.seconds(4.2));
-        autoHide.setOnFinished(e -> dismissSlip(slip));
-        slip.hoverProperty().addListener((obs, o, hovered) -> {
+        autoHide.setOnFinished(_ -> dismissSlip(slip));
+        slip.hoverProperty().addListener((_, _, hovered) -> {
             if (Boolean.TRUE.equals(hovered)) autoHide.pause();
             else autoHide.play();
         });
@@ -133,7 +133,7 @@ public final class Toasts extends VBox {
         slip.setMinHeight(Region.USE_PREF_SIZE);
         slip.setEffect(Tokens.createAmbientShadow());
 
-        closeBtn.setOnAction(e -> {
+        closeBtn.setOnAction(_ -> {
             if (customDismiss != null) customDismiss.run();
             else dismissSlip(slip);
         });
@@ -148,7 +148,7 @@ public final class Toasts extends VBox {
         }
         FadeTransition ft = new FadeTransition(Motion.FAST, slip);
         ft.setToValue(0.0);
-        ft.setOnFinished(e -> getChildren().remove(slip));
+        ft.setOnFinished(_ -> getChildren().remove(slip));
         ft.play();
     }
 }

@@ -3,6 +3,7 @@ package com.officevpn.gui.admin;
 import com.officevpn.admin.AlertManager;
 import com.officevpn.admin.MetricsCollector;
 import com.officevpn.config.ConfigUtil;
+import com.officevpn.config.Messages;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.gui.UiSafe;
 import com.officevpn.server.VpnGatewayServer;
@@ -65,18 +66,19 @@ public final class OverviewPanel extends VBox {
         HBox headerRow = new HBox(10);
         headerRow.setAlignment(Pos.CENTER_LEFT);
         VBox titleBox = new VBox(2);
-        Label title = new Label("Gateway Telemetry & Executive Overview");
+        Label title = new Label(Messages.get("admin.overview.title"));
         title.getStyleClass().add("page-title");
-        Label subtitle = new Label("Live operational metrics, cryptographic identity, MySQL pool health, and top bandwidth consumers");
+        Label subtitle = new Label(Messages.get("admin.overview.subtitle"));
         subtitle.getStyleClass().add("page-subtitle");
         titleBox.getChildren().addAll(title, subtitle);
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        Button refreshBtn = new Button("Refresh Metrics");
-        refreshBtn.getStyleClass().add("btn-secondary");
-        refreshBtn.setOnAction(e -> refresh());
-        headerRow.getChildren().addAll(titleBox, spacer, refreshBtn);
+        Button refreshMetricsButton = new Button(Messages.get("admin.overview.button.refresh"));
+        refreshMetricsButton.getStyleClass().add("btn-secondary");
+        Messages.configureAccessibleControl(refreshMetricsButton, Messages.get("admin.overview.button.refresh"), null);
+        refreshMetricsButton.setOnAction(_ -> refresh());
+        headerRow.getChildren().addAll(titleBox, spacer, refreshMetricsButton);
 
         GridPane kpiGrid = new GridPane();
         kpiGrid.setHgap(14);
@@ -99,17 +101,18 @@ public final class OverviewPanel extends VBox {
         identityCard.getStyleClass().add("card");
         HBox fpHeader = new HBox(10);
         fpHeader.setAlignment(Pos.CENTER_LEFT);
-        Label fpTitle = new Label("Server RSA-2048 Public Key SHA-256 Fingerprint (Client TOFU Pin)");
+        Label fpTitle = new Label(Messages.get("admin.overview.section.fingerprint"));
         fpTitle.getStyleClass().add("section-title");
         Region fpSpacer = new Region();
         HBox.setHgrow(fpSpacer, Priority.ALWAYS);
-        Button copyFpBtn = new Button("Copy Fingerprint");
-        copyFpBtn.getStyleClass().add("btn-secondary");
-        copyFpBtn.setOnAction(e -> UiSafe.copyToClipboard(fingerprintLabel.getText()));
-        fpHeader.getChildren().addAll(fpTitle, fpSpacer, copyFpBtn);
+        Button copyFingerprintButton = new Button(Messages.get("admin.overview.button.copyFp"));
+        copyFingerprintButton.getStyleClass().add("btn-secondary");
+        Messages.configureAccessibleControl(copyFingerprintButton, Messages.get("admin.overview.button.copyFp"), null);
+        copyFingerprintButton.setOnAction(_ -> UiSafe.copyToClipboard(fingerprintLabel.getText()));
+        fpHeader.getChildren().addAll(fpTitle, fpSpacer, copyFingerprintButton);
 
         fingerprintLabel.getStyleClass().add("mono-text");
-        fingerprintLabel.setStyle("-fx-text-fill: #22d3ee; -fx-font-size: 13px; -fx-font-weight: bold;");
+        fingerprintLabel.setStyle("-fx-text-fill: #096B67; -fx-font-size: 13px; -fx-font-weight: bold;");
         fingerprintLabel.setWrapText(true);
 
         HBox runtimeStrip = new HBox(12);
@@ -124,7 +127,7 @@ public final class OverviewPanel extends VBox {
         VBox bwCard = new VBox(10);
         bwCard.getStyleClass().add("card");
         VBox.setVgrow(bwCard, Priority.ALWAYS);
-        Label bwTitle = new Label("Top Bandwidth Consumers");
+        Label bwTitle = new Label(Messages.get("admin.overview.section.topBandwidth"));
         bwTitle.getStyleClass().add("section-title");
 
         UiSafe.configureSafeTable(topBandwidthTable);

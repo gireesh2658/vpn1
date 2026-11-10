@@ -1,5 +1,6 @@
 package com.officevpn.gui.admin;
 
+import com.officevpn.config.Messages;
 import com.officevpn.gui.UiSafe;
 import com.officevpn.protocol.PacketType;
 import com.officevpn.protocol.VpnPacket;
@@ -58,9 +59,9 @@ public final class PacketMonitorPanel extends VBox {
         HBox header = new HBox(10);
         header.setAlignment(Pos.CENTER_LEFT);
         VBox titleBox = new VBox(2);
-        Label title = new Label("Encrypted Wire Packet Sniffer (OFFICE-VPN-2.0)");
+        Label title = new Label(Messages.get("admin.sniffer.title"));
         title.getStyleClass().add("page-title");
-        Label subtitle = new Label("Live telemetry of directional AES-256-GCM frames, sequence numbers, and ECDH handshakes");
+        Label subtitle = new Label(Messages.get("admin.sniffer.subtitle"));
         subtitle.getStyleClass().add("page-subtitle");
         titleBox.getChildren().addAll(title, subtitle);
         Region spacer = new Region();
@@ -74,11 +75,11 @@ public final class PacketMonitorPanel extends VBox {
 
         directionFilter.getItems().addAll("ALL DIRECTIONS", "INBOUND", "OUTBOUND");
         directionFilter.getSelectionModel().selectFirst();
-        directionFilter.setOnAction(e -> rerender());
+        directionFilter.setOnAction(_ -> rerender());
 
-        Button clearBtn = new Button("Clear Capture");
-        clearBtn.getStyleClass().add("btn-danger");
-        clearBtn.setOnAction(e -> {
+        Button clearCaptureButton = new Button(Messages.get("admin.sniffer.button.clear"));
+        clearCaptureButton.getStyleClass().add("btn-danger");
+        clearCaptureButton.setOnAction(_ -> {
             buffer.clear();
             table.getItems().clear();
             totalCount = 0;
@@ -87,7 +88,7 @@ public final class PacketMonitorPanel extends VBox {
 
         Region tbSpacer = new Region();
         HBox.setHgrow(tbSpacer, Priority.ALWAYS);
-        toolbar.getChildren().addAll(captureActiveCheck, directionFilter, tbSpacer, clearBtn);
+        toolbar.getChildren().addAll(captureActiveCheck, directionFilter, tbSpacer, clearCaptureButton);
 
         UiSafe.configureSafeTable(table);
         table.getColumns().add(UiSafe.safeColumn("Time", SniffedFrame::time, 110));

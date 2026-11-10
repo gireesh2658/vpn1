@@ -1,9 +1,12 @@
 package com.officevpn.storage;
 
+import com.officevpn.config.ConfigUtil;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.model.Department;
 import com.officevpn.model.Role;
 import com.officevpn.model.UserAccount;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -46,7 +49,8 @@ import java.util.stream.Stream;
  */
 public final class VaultManager {
 
-    public static final String DEFAULT_VAULT_ROOT = "server_vaults";
+    private static final Logger LOGGER = LoggerFactory.getLogger(VaultManager.class);
+    public static final String DEFAULT_VAULT_ROOT = ConfigUtil.getVaultRootDir();
     public static final int MAX_FILE_SIZE = 8 * 1024 * 1024; // 8 MB limit
     public static final int MAX_FILES_PER_VAULT = 1000;
     public static final int MAX_BACKUP_VERSIONS = 5;
@@ -407,7 +411,9 @@ public final class VaultManager {
             } catch (Exception e) {
                 try {
                     fileOps.deleteIfExists(tempPath);
-                } catch (Exception ignored) {}
+                } catch (Exception cleanupEx) {
+                    LOGGER.debug("Ignoring temp vault file cleanup failure: {}", cleanupEx.getMessage());
+                }
                 if (e instanceof VaultException ve) {
                     throw ve;
                 }
@@ -437,7 +443,9 @@ public final class VaultManager {
                     if (m.matches()) {
                         try {
                             return Long.parseLong(m.group(1));
-                        } catch (NumberFormatException ignored) {}
+                        } catch (NumberFormatException nfe) {
+                            LOGGER.debug("Ignoring non-numeric version suffix on {}", p.getFileName());
+                        }
                     }
                     return 0L;
                 }));
@@ -446,7 +454,9 @@ public final class VaultManager {
                     fileOps.deleteIfExists(versions.get(i));
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            LOGGER.warn("Failed to prune old vault backup versions in {}: {}", versionsDir, ex.getMessage());
+        }
     }
 
     private long countVaultFiles(Path deptRoot) {

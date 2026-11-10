@@ -1,10 +1,9 @@
 package com.officevpn.gui.admin;
 
 import com.officevpn.admin.AdminLoginPolicy;
-import com.officevpn.admin.DemoSeeder;
+import com.officevpn.config.Messages;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.gui.UiSafe;
-import com.officevpn.model.Role;
 import com.officevpn.model.UserAccount;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -12,7 +11,6 @@ import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
-import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -21,9 +19,10 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
-import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -33,13 +32,11 @@ import java.util.concurrent.CompletableFuture;
  */
 public final class AdminLoginDialog {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(AdminLoginDialog.class);
+
     private AdminLoginDialog() {}
 
-    public static Optional<UserAccount> showLoginDialog(
-            Window owner,
-            DatabaseManager db,
-            List<DemoSeeder.DemoAccount> seededDemoAccounts
-    ) {
+    public static Optional<UserAccount> showLoginDialog(Window owner, DatabaseManager db) {
         Stage stage = new Stage();
         if (owner != null) {
             stage.initOwner(owner);
@@ -47,24 +44,31 @@ public final class AdminLoginDialog {
         } else {
             stage.initModality(Modality.APPLICATION_MODAL);
         }
-        stage.setTitle("Office VPN — Headquarters Administrator Login");
+        stage.setTitle(Messages.get("app.title.admin.login"));
         stage.setResizable(false);
 
-        Label title = new Label("Gateway Governance Sign-In");
+        Label title = new Label(Messages.get("admin.login.header"));
         title.getStyleClass().add("page-title");
 
-        Label subtitle = new Label("Authenticate with a Headquarters ADMIN account backed by MySQL.");
+        Label subtitle = new Label(Messages.get("admin.login.sub"));
         subtitle.getStyleClass().add("page-subtitle");
         subtitle.setWrapText(true);
 
         TextField userField = new TextField();
-        userField.setPromptText("e.g. admin_hq");
+        userField.setPromptText("Enter administrator username");
 
         PasswordField passField = new PasswordField();
         passField.setPromptText("Administrator passphrase");
 
+        TextField totpField = new TextField();
+        totpField.setPromptText(Messages.get("admin.login.prompt.totp"));
+
+        Label totpHint = new Label("Leave empty if TOTP 2FA is OFF for this admin. Required only after enabling 2FA in Users -> Manage 2FA.");
+        totpHint.getStyleClass().add("muted-label");
+        totpHint.setWrapText(true);
+
         Label errorLabel = new Label("");
-        errorLabel.setStyle("-fx-text-fill: #f87171; -fx-font-weight: bold;");
+        errorLabel.setStyle("-fx-text-fill: #BA2A1A; -fx-font-weight: bold;");
         errorLabel.setWrapText(true);
 
         VBox root = new VBox(14);
@@ -72,80 +76,49 @@ public final class AdminLoginDialog {
         root.setPadding(new Insets(22));
         root.setPrefWidth(490);
 
-        VBox demoBanner = null;
-        if (seededDemoAccounts != null && !seededDemoAccounts.isEmpty()) {
-            Label demoHdr = new Label("DEMO MODE ACTIVE — Seeded Test Credentials");
-            demoHdr.getStyleClass().addAll("pill", "pill-warning");
+        Button cancelButton = new Button(Messages.get("common.exit"));
+        cancelButton.getStyleClass().add("btn-secondary");
 
-            StringBuilder sb = new StringBuilder();
-            DemoSeeder.DemoAccount adminAccount = null;
-            for (DemoSeeder.DemoAccount acc : seededDemoAccounts) {
-                if (acc.role() == Role.ADMIN && adminAccount == null) {
-                    adminAccount = acc;
-                }
-                sb.append(String.format("%-15s | %-12s | %-8s | %s%n",
-                        acc.username(), acc.department(), acc.role(), acc.password()));
-            }
-            TextArea credsBox = new TextArea(sb.toString());
-            credsBox.setEditable(false);
-            credsBox.getStyleClass().add("console-area");
-            credsBox.setPrefRowCount(Math.min(6, seededDemoAccounts.size() + 1));
-
-            Button fillBtn = new Button("Auto-Fill HQ Admin");
-            fillBtn.getStyleClass().add("btn-secondary");
-            final DemoSeeder.DemoAccount finalAdmin = adminAccount;
-            fillBtn.setOnAction(e -> {
-                if (finalAdmin != null) {
-                    userField.setText(finalAdmin.username());
-                    passField.setText(finalAdmin.password());
-                }
-            });
-
-            demoBanner = new VBox(8, demoHdr, credsBox, fillBtn);
-            demoBanner.getStyleClass().add("card");
-        }
-
-        Button cancelBtn = new Button("Exit");
-        cancelBtn.getStyleClass().add("btn-secondary");
-
-        Button loginBtn = new Button("Authenticate & Launch");
-        loginBtn.getStyleClass().add("btn-primary");
-        loginBtn.setDefaultButton(true);
+        Button signInButton = new Button(Messages.get("admin.login.button.signIn"));
+        signInButton.getStyleClass().add("btn-primary");
+        signInButton.setDefaultButton(true);
 
         final UserAccount[] authenticatedRef = new UserAccount[1];
 
-        cancelBtn.setOnAction(e -> stage.close());
+        cancelButton.setOnAction(_ -> stage.close());
 
-        loginBtn.setOnAction(e -> {
+        signInButton.setOnAction(_ -> {
             String uname = userField.getText() != null ? userField.getText().trim() : "";
             char[] pw = passField.getText().toCharArray();
+            String totp = totpField.getText() != null ? totpField.getText().trim() : "";
             if (uname.isEmpty() || pw.length == 0) {
                 Arrays.fill(pw, '\0');
-                errorLabel.setText("Username and passphrase are required.");
+                errorLabel.setText(Messages.get("login.client.error.missingCredentials"));
                 return;
             }
 
             errorLabel.setText("");
-            loginBtn.setDisable(true);
-            cancelBtn.setDisable(true);
-            loginBtn.setText("Verifying (PBKDF2)...");
+            signInButton.setDisable(true);
+            cancelButton.setDisable(true);
+            signInButton.setText("Verifying (PBKDF2)...");
 
             CompletableFuture.supplyAsync(() -> {
                 try {
-                    return AdminLoginPolicy.authenticateAdmin(db, uname, pw, "local");
+                    return AdminLoginPolicy.authenticateAdmin(db, uname, pw, totp, "local");
                 } finally {
                     Arrays.fill(pw, '\0');
                 }
             }).whenComplete((account, err) -> Platform.runLater(() -> {
-                loginBtn.setDisable(false);
-                cancelBtn.setDisable(false);
-                loginBtn.setText("Authenticate & Launch");
+                signInButton.setDisable(false);
+                cancelButton.setDisable(false);
+                signInButton.setText(Messages.get("admin.login.button.signIn"));
                 if (err != null) {
                     Throwable cause = err.getCause() != null ? err.getCause() : err;
-                    errorLabel.setText("Authentication error: " + cause.getMessage());
+                    LOGGER.error("Administrator sign-in failed unexpectedly: {}", cause.getMessage(), cause);
+                    errorLabel.setText("Authentication service unavailable. Check local MySQL connectivity and retry.");
                     passField.clear();
                 } else if (account == null) {
-                    errorLabel.setText("Invalid credentials, account locked, or insufficient Headquarters ADMIN privilege.");
+                    errorLabel.setText("Invalid credentials, missing 2FA code, account locked, or insufficient Headquarters ADMIN privilege.");
                     passField.clear();
                 } else {
                     authenticatedRef[0] = account;
@@ -157,20 +130,17 @@ public final class AdminLoginDialog {
         HBox actions = new HBox(10);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        actions.getChildren().addAll(spacer, cancelBtn, loginBtn);
+        actions.getChildren().addAll(spacer, cancelButton, signInButton);
 
         VBox formCard = new VBox(10,
-                new Label("Administrator Username"), userField,
-                new Label("Passphrase"), passField,
+                new Label(Messages.get("admin.dialog.label.adminUsername")), userField,
+                new Label(Messages.get("admin.dialog.label.passphrase")), passField,
+                new Label(Messages.get("admin.login.label.totp")), totpField, totpHint,
                 errorLabel
         );
         formCard.getStyleClass().add("card");
 
-        root.getChildren().addAll(title, subtitle);
-        if (demoBanner != null) {
-            root.getChildren().add(demoBanner);
-        }
-        root.getChildren().addAll(formCard, actions);
+        root.getChildren().addAll(title, subtitle, formCard, actions);
 
         Scene scene = new Scene(root);
         UiSafe.applyTheme(scene);

@@ -61,7 +61,7 @@ public final class LiveRoster extends Control {
 
     private final ObservableList<EmployeeSessionItem> sessions = FXCollections.observableArrayList();
     private final ObjectProperty<InviteKeyState> inviteKey = new SimpleObjectProperty<>(null);
-    private final ObjectProperty<Consumer<String>> onRevokeSession = new SimpleObjectProperty<>(id -> {});
+    private final ObjectProperty<Consumer<String>> onRevokeSession = new SimpleObjectProperty<>(_ -> {});
     private final ObjectProperty<Runnable> onRotateInvite = new SimpleObjectProperty<>(() -> {});
 
     public LiveRoster() {
@@ -74,11 +74,11 @@ public final class LiveRoster extends Control {
     public void bindService(VpnClientService service, Consumer<String> toastCallback) {
         if (service == null) return;
         Runnable syncRoster = () -> sessions.setAll(service.activeRoster());
-        service.activeRoster().addListener((ListChangeListener<EmployeeSessionItem>) c -> syncRoster.run());
+        service.activeRoster().addListener((ListChangeListener<EmployeeSessionItem>) _ -> syncRoster.run());
         syncRoster.run();
 
         inviteKey.set(service.inviteKeyProperty().get());
-        service.inviteKeyProperty().addListener((obs, o, n) -> inviteKey.set(n));
+        service.inviteKeyProperty().addListener((_, _, n) -> inviteKey.set(n));
 
         onRevokeSession.set(id -> {
             service.revokeSession(id);
@@ -140,12 +140,12 @@ public final class LiveRoster extends Control {
             trackPane.getChildren().add(thumb);
             getChildren().addAll(prompt, trackPane);
 
-            progress.addListener((obs, o, n) -> {
+            progress.addListener((_, _, n) -> {
                 double maxTravel = Math.max(20.0, getWidth() - 28.0);
                 thumb.resizeRelocate(3.0 + n.doubleValue() * maxTravel, 3.0, 22.0, 22.0);
                 prompt.setOpacity(1.0 - n.doubleValue() * 0.8);
             });
-            widthProperty().addListener((obs, o, n) -> progress.set(progress.get()));
+            widthProperty().addListener((_, _, _) -> progress.set(progress.get()));
             thumb.resizeRelocate(3.0, 3.0, 22.0, 22.0);
 
             thumb.setOnMousePressed(e -> {
@@ -228,12 +228,12 @@ public final class LiveRoster extends Control {
             root.getChildren().addAll(topGrid, tableCard);
             getChildren().add(root);
 
-            control.sessions().addListener((ListChangeListener<EmployeeSessionItem>) c -> rebuildAvatars());
-            control.inviteKeyProperty().addListener((obs, o, n) -> syncInvite(n));
+            control.sessions().addListener((ListChangeListener<EmployeeSessionItem>) _ -> rebuildAvatars());
+            control.inviteKeyProperty().addListener((_, _, n) -> syncInvite(n));
             rebuildAvatars();
             syncInvite(control.inviteKeyProperty().get());
 
-            liveClock = new Timeline(new KeyFrame(Duration.seconds(1), e -> {
+            liveClock = new Timeline(new KeyFrame(Duration.seconds(1), _ -> {
                 updateInviteCountdown();
                 table.refresh();
             }));
@@ -262,7 +262,7 @@ public final class LiveRoster extends Control {
             Button copyBtn = new Button("Copy");
             copyBtn.getStyleClass().add("ia-btn-peacock");
             copyBtn.setGraphic(Icons.peacock(Feather.COPY, 12));
-            copyBtn.setOnAction(e -> {
+            copyBtn.setOnAction(_ -> {
                 ClipboardContent cc = new ClipboardContent();
                 cc.putString(inviteCodeLbl.getText());
                 Clipboard.getSystemClipboard().setContent(cc);
@@ -271,7 +271,7 @@ public final class LiveRoster extends Control {
 
             Button rotateBtn = new Button("Rotate");
             rotateBtn.setGraphic(Icons.ink(Feather.REFRESH_CW, 12));
-            rotateBtn.setOnAction(e -> {
+            rotateBtn.setOnAction(_ -> {
                 Runnable r = control.onRotateInviteProperty().get();
                 if (r != null) r.run();
                 copyFeedbackLbl.setText("");
@@ -290,8 +290,8 @@ public final class LiveRoster extends Control {
         }
 
         private void setupTable(LiveRoster control) {
-            FilteredList<EmployeeSessionItem> filtered = new FilteredList<>(control.sessions(), p -> true);
-            filterBox.textProperty().addListener((obs, o, q) -> {
+            FilteredList<EmployeeSessionItem> filtered = new FilteredList<>(control.sessions(), _ -> true);
+            filterBox.textProperty().addListener((_, _, q) -> {
                 String query = q == null ? "" : q.trim().toLowerCase(Locale.ROOT);
                 filtered.setPredicate(item -> query.isEmpty()
                         || item.username().toLowerCase(Locale.ROOT).contains(query)
@@ -311,7 +311,7 @@ public final class LiveRoster extends Control {
             TableColumn<EmployeeSessionItem, String> colVip = new TableColumn<>("Virtual IP");
             colVip.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().virtualIp()));
             colVip.setMinWidth(84);
-            colVip.setCellFactory(c -> new TableCell<>() {
+            colVip.setCellFactory(_ -> new TableCell<>() {
                 @Override protected void updateItem(String item, boolean empty) {
                     super.updateItem(item, empty);
                     setText(empty ? null : item);
@@ -326,7 +326,7 @@ public final class LiveRoster extends Control {
             TableColumn<EmployeeSessionItem, EmployeeSessionItem> colPosture = new TableColumn<>("Posture");
             colPosture.setCellValueFactory(cd -> new SimpleObjectProperty<>(cd.getValue()));
             colPosture.setMinWidth(104);
-            colPosture.setCellFactory(c -> new TableCell<>() {
+            colPosture.setCellFactory(_ -> new TableCell<>() {
                 @Override protected void updateItem(EmployeeSessionItem item, boolean empty) {
                     super.updateItem(item, empty);
                     if (empty || item == null) {
@@ -344,7 +344,7 @@ public final class LiveRoster extends Control {
             TableColumn<EmployeeSessionItem, String> colDur = new TableColumn<>("Duration");
             colDur.setCellValueFactory(cd -> new SimpleStringProperty(formatDuration(cd.getValue().connectedAtMs())));
             colDur.setMinWidth(74);
-            colDur.setCellFactory(c -> new TableCell<>() {
+            colDur.setCellFactory(_ -> new TableCell<>() {
                 @Override protected void updateItem(String item, boolean empty) {
                     super.updateItem(item, empty);
                     setText(empty ? null : item);
@@ -355,7 +355,7 @@ public final class LiveRoster extends Control {
             TableColumn<EmployeeSessionItem, EmployeeSessionItem> colRevoke = new TableColumn<>("Revoke");
             colRevoke.setCellValueFactory(cd -> new SimpleObjectProperty<>(cd.getValue()));
             colRevoke.setMinWidth(142);
-            colRevoke.setCellFactory(c -> new TableCell<>() {
+            colRevoke.setCellFactory(_ -> new TableCell<>() {
                 @Override protected void updateItem(EmployeeSessionItem item, boolean empty) {
                     super.updateItem(item, empty);
                     if (empty || item == null) {

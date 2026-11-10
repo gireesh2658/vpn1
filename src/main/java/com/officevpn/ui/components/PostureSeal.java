@@ -45,7 +45,7 @@ public final class PostureSeal extends Control {
 
     private final ObservableList<PostureCheck> checks = FXCollections.observableArrayList();
     private final ObjectProperty<PostureCheck> selectedCheck = new SimpleObjectProperty<>(null);
-    private final ObjectProperty<Consumer<String>> onRemediate = new SimpleObjectProperty<>(id -> {});
+    private final ObjectProperty<Consumer<String>> onRemediate = new SimpleObjectProperty<>(_ -> {});
     private final ObjectProperty<Runnable> onRescan = new SimpleObjectProperty<>(() -> {});
 
     public PostureSeal() {
@@ -54,7 +54,7 @@ public final class PostureSeal extends Control {
         setAccessibleRole(AccessibleRole.PROGRESS_INDICATOR);
         setMinSize(260, Region.USE_PREF_SIZE);
 
-        checks.addListener((ListChangeListener<PostureCheck>) c -> syncComplianceState());
+        checks.addListener((ListChangeListener<PostureCheck>) _ -> syncComplianceState());
     }
 
     public void bindService(VpnClientService service) {
@@ -64,7 +64,7 @@ public final class PostureSeal extends Control {
             PostureCheck failing = checks.stream().filter(p -> !p.passed()).findFirst().orElse(null);
             selectedCheck.set(failing != null ? failing : (checks.isEmpty() ? null : checks.get(0)));
         };
-        service.postureChecks().addListener((ListChangeListener<PostureCheck>) c -> sync.run());
+        service.postureChecks().addListener((ListChangeListener<PostureCheck>) _ -> sync.run());
         sync.run();
         onRemediate.set(service::remediatePostureCheck);
         onRescan.set(service::rerunPostureChecks);
@@ -117,7 +117,7 @@ public final class PostureSeal extends Control {
             Button rescanBtn = new Button("Re-check");
             rescanBtn.setGraphic(Icons.ink(Feather.REFRESH_CW, 12));
             rescanBtn.setMinWidth(Region.USE_PREF_SIZE);
-            rescanBtn.setOnAction(e -> {
+            rescanBtn.setOnAction(_ -> {
                 Runnable r = control.onRescanProperty().get();
                 if (r != null) r.run();
             });
@@ -157,7 +157,7 @@ public final class PostureSeal extends Control {
             remBody.setTextFill(Tokens.INK);
             remBody.setWrapText(true);
             remActionBtn.getStyleClass().add("ia-btn-marigold");
-            remActionBtn.setOnAction(e -> {
+            remActionBtn.setOnAction(_ -> {
                 PostureCheck sel = control.selectedCheckProperty().get();
                 if (sel != null && !sel.passed()) {
                     var cb = control.onRemediateProperty().get();
@@ -173,8 +173,8 @@ public final class PostureSeal extends Control {
             root.getChildren().addAll(header, body, remediationCard);
             getChildren().add(root);
 
-            control.checks().addListener((ListChangeListener<PostureCheck>) c -> refreshAll());
-            control.selectedCheckProperty().addListener((obs, o, n) -> refreshAll());
+            control.checks().addListener((ListChangeListener<PostureCheck>) _ -> refreshAll());
+            control.selectedCheckProperty().addListener((_, _, _) -> refreshAll());
             refreshAll();
         }
 
@@ -259,7 +259,7 @@ public final class PostureSeal extends Control {
                 String bg = isSel ? (pc.passed() ? "#F2EBDC" : "#FEECE9") : "#FBF8F1";
                 String bd = isSel ? (pc.passed() ? "#CBBCA0" : "#F4604C") : "#E6DCC6";
                 row.setStyle("-fx-background-color: " + bg + "; -fx-background-radius: 9px; -fx-border-color: " + bd + "; -fx-border-radius: 9px; -fx-cursor: hand;");
-                row.setOnMouseClicked(e -> getSkinnable().selectedCheckProperty().set(pc));
+                row.setOnMouseClicked(_ -> getSkinnable().selectedCheckProperty().set(pc));
                 checksColumn.getChildren().add(row);
             }
         }

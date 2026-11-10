@@ -45,12 +45,29 @@ public final class AdminLoginPolicy {
      * @return UserAccount if authenticated and authorized as HQ ADMIN; null otherwise
      */
     public static UserAccount authenticateAdmin(DatabaseManager db, String username, char[] password, String ipAddress) {
+        return authenticateAdmin(db, username, password, null, ipAddress);
+    }
+
+    /**
+     * Authenticates an administrator against the database with optional RFC-6238 TOTP MFA.
+     *
+     * @param db        DatabaseManager instance
+     * @param username  username candidate
+     * @param password  password candidate char array (wiped after use)
+     * @param totpCode  optional 6-digit authenticator code (required if MFA is enrolled)
+     * @param ipAddress IP address for audit logging
+     * @return UserAccount if authenticated and authorized as HQ ADMIN; null otherwise
+     */
+    public static UserAccount authenticateAdmin(DatabaseManager db, String username, char[] password,
+                                                String totpCode, String ipAddress) {
         Objects.requireNonNull(db, "DatabaseManager cannot be null");
         if (username == null || password == null) {
             return null;
         }
 
-        UserAccount account = db.authenticateUser(username, password, ipAddress);
+        UserAccount account = (totpCode != null && !totpCode.isBlank())
+                ? db.authenticateUser(username, password, totpCode.trim(), ipAddress)
+                : db.authenticateUser(username, password, ipAddress);
         if (account == null) {
             return null;
         }

@@ -21,7 +21,7 @@ public final class DnsLeakProtection {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DnsLeakProtection.class);
 
-    public static final String DEFAULT_VPN_DNS = "10.8.0.1";
+    public static final String DEFAULT_VPN_DNS = ConfigUtil.getVpnDns();
     private static final Set<String> BLOCKED_PUBLIC_RESOLVERS = Set.of(
             "8.8.8.8",
             "8.8.4.4",
@@ -47,11 +47,13 @@ public final class DnsLeakProtection {
     }
 
     private void seedDefaultOfficeDnsRecords() {
-        internalDnsRecords.put("gateway.office.local", "10.8.0.1");
-        internalDnsRecords.put("files.office.local", "10.8.0.1");
-        internalDnsRecords.put("auth.office.local", "10.8.0.1");
-        internalDnsRecords.put("hq.officevpn.local", "10.8.0.1");
-        internalDnsRecords.put("branch.officevpn.local", "10.9.0.1");
+        String hqDns = vpnDnsServer;
+        String branchGateway = ConfigUtil.getBranchSubnetPrefix() + "1";
+        internalDnsRecords.put("gateway.office.local", hqDns);
+        internalDnsRecords.put("files.office.local", hqDns);
+        internalDnsRecords.put("auth.office.local", hqDns);
+        internalDnsRecords.put("hq.officevpn.local", hqDns);
+        internalDnsRecords.put("branch.officevpn.local", branchGateway);
     }
 
     public void setTunnelActive(boolean active) {

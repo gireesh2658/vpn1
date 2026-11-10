@@ -1,5 +1,7 @@
 # Build and Bytecode
 target/
+build/
+out/
 bin/
 *.class
 *.jar
@@ -20,11 +22,14 @@ audit.head
 server_identity.key
 known_gateways.properties*
 client_trusted_fingerprints.properties
+config.local.properties
 *.p12
 *.jks
 server_vaults/
 
 # Logs and Temporaries
+logs/
+server_data/
 *.log
 *.tmp
 *.bak

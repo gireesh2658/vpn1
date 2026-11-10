@@ -1,7 +1,6 @@
 package com.officevpn.gui.admin;
 
 import com.officevpn.admin.AdminBootstrap;
-import com.officevpn.admin.DemoSeeder;
 import com.officevpn.config.ConfigUtil;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.gui.UiSafe;
@@ -14,10 +13,11 @@ import com.officevpn.storage.VaultManager;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.stage.Stage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.awt.GraphicsEnvironment;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -28,6 +28,8 @@ import java.util.concurrent.CompletableFuture;
  * a graphical display, and otherwise boots the JavaFX Enterprise Governance Suite.
  */
 public final class AdminDashboardApp {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(AdminDashboardApp.class);
 
     private AdminDashboardApp() {}
 
@@ -51,25 +53,20 @@ public final class AdminDashboardApp {
             try {
                 db = new DatabaseManager();
             } catch (Exception ex) {
+                LOGGER.error("Failed to initialize MySQL persistence: {}", ex.getMessage(), ex);
                 UiSafe.showError(null, "MySQL Initialization Failed",
-                        "Unable to initialize MySQL persistence (" + ConfigUtil.getDbUrl() + ").\n\n"
-                                + "Ensure MySQL / MariaDB is running and credentials in config.properties are valid.\n\nDetails: "
-                                + ex.getMessage());
+                        "Unable to connect to the local MySQL database ("
+                                + ConfigUtil.getDbHost() + ":" + ConfigUtil.getDbPort() + "/"
+                                + ConfigUtil.getDbName() + ").\n\n"
+                                + "Ensure local MySQL Server 8.4 is running and configure external credentials in "
+                                + "~/.officevpn/db.properties, ./config.local.properties, or OFFICEVPN_DB_USER/OFFICEVPN_DB_PASS.");
                 Platform.exit();
                 return;
             }
 
             CompletableFuture<AuditVerifyResult> verifyFuture = db.startBackgroundVerify();
 
-            List<DemoSeeder.DemoAccount> seededDemoAccounts = List.of();
-            if (DemoSeeder.isDemoEnabled()) {
-                seededDemoAccounts = DemoSeeder.seed(db);
-                System.out.println("=== OFFICE VPN DEMO ACCOUNTS SEEDED ===");
-                for (DemoSeeder.DemoAccount acc : seededDemoAccounts) {
-                    System.out.printf("  %-14s | %-12s | %-8s | Password: %s%n",
-                            acc.username(), acc.department(), acc.role(), acc.password());
-                }
-            } else if (AdminBootstrap.needsBootstrap(db)) {
+            if (AdminBootstrap.needsBootstrap(db)) {
                 Optional<UserAccount> bootstrapped = AdminBootstrapDialog.showSetupDialog(null, db);
                 if (bootstrapped.isEmpty()) {
                     closeQuietly();
@@ -78,21 +75,22 @@ public final class AdminDashboardApp {
                 }
             }
 
-            Optional<UserAccount> loggedIn = AdminLoginDialog.showLoginDialog(null, db, seededDemoAccounts);
+            Optional<UserAccount> loggedIn = AdminLoginDialog.showLoginDialog(null, db);
             if (loggedIn.isEmpty()) {
                 closeQuietly();
                 Platform.exit();
                 return;
             }
 
-            Optional<ServerIdentity> identityOpt = AdminIdentityDialog.resolveIdentity(null, Path.of("server_data"));
+            Optional<ServerIdentity> identityOpt = AdminIdentityDialog.resolveIdentity(
+                    null, Path.of(ConfigUtil.getServerDataDir()));
             if (identityOpt.isEmpty()) {
                 closeQuietly();
                 Platform.exit();
                 return;
             }
 
-            VaultManager vault = new VaultManager(Path.of("server_vaults"));
+            VaultManager vault = new VaultManager(Path.of(ConfigUtil.getVaultRootDir()));
             gatewayServer = new VpnGatewayServer(db, vault, identityOpt.get());
 
             int port = ConfigUtil.getPort();
@@ -120,10 +118,18 @@ public final class AdminDashboardApp {
 
         private void closeQuietly() {
             if (gatewayServer != null) {
-                try { gatewayServer.stop(); } catch (Exception ignored) {}
+                try {
+                    gatewayServer.stop();
+                } catch (Exception ex) {
+                    LOGGER.debug("Ignoring error stopping gateway during shutdown: {}", ex.getMessage());
+                }
             }
             if (db != null) {
-                try { db.close(); } catch (Exception ignored) {}
+                try {
+                    db.close();
+                } catch (Exception ex) {
+                    LOGGER.debug("Ignoring error closing database pool during shutdown: {}", ex.getMessage());
+                }
             }
         }
     }

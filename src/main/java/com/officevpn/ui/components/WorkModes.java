@@ -24,7 +24,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-import javafx.scene.paint.Color;
 import org.kordamp.ikonli.feather.Feather;
 
 import java.util.Comparator;
@@ -40,10 +39,10 @@ public final class WorkModes extends Control {
 
     private final ObservableList<WorkModeProfile> profiles = FXCollections.observableArrayList();
     private final ObjectProperty<WorkModeProfile> activeProfile = new SimpleObjectProperty<>(null);
-    private final ObjectProperty<Consumer<WorkModeProfile>> onActivateProfile = new SimpleObjectProperty<>(p -> {});
-    private final ObjectProperty<Consumer<WorkModeProfile>> onTogglePin = new SimpleObjectProperty<>(p -> {});
-    private final ObjectProperty<Consumer<WorkModeProfile>> onSaveProfile = new SimpleObjectProperty<>(p -> {});
-    private final ObjectProperty<Consumer<WorkModeProfile>> onConnectAndGo = new SimpleObjectProperty<>(p -> {});
+    private final ObjectProperty<Consumer<WorkModeProfile>> onActivateProfile = new SimpleObjectProperty<>(_ -> {});
+    private final ObjectProperty<Consumer<WorkModeProfile>> onTogglePin = new SimpleObjectProperty<>(_ -> {});
+    private final ObjectProperty<Consumer<WorkModeProfile>> onSaveProfile = new SimpleObjectProperty<>(_ -> {});
+    private final ObjectProperty<Consumer<WorkModeProfile>> onConnectAndGo = new SimpleObjectProperty<>(_ -> {});
 
     public WorkModes() {
         getStyleClass().setAll("work-modes");
@@ -55,10 +54,10 @@ public final class WorkModes extends Control {
     public void bindService(VpnClientService service, Consumer<String> toastCallback) {
         if (service == null) return;
         Runnable sync = () -> profiles.setAll(service.workModes());
-        service.workModes().addListener((ListChangeListener<WorkModeProfile>) c -> sync.run());
+        service.workModes().addListener((ListChangeListener<WorkModeProfile>) _ -> sync.run());
         sync.run();
         activeProfile.set(service.activeWorkModeProperty().get());
-        service.activeWorkModeProperty().addListener((obs, o, n) -> activeProfile.set(n));
+        service.activeWorkModeProperty().addListener((_, _, n) -> activeProfile.set(n));
 
         onActivateProfile.set(p -> {
             if (p != null) service.activateWorkMode(p.id());
@@ -117,8 +116,8 @@ public final class WorkModes extends Control {
             splitRoot.getChildren().addAll(cardsColumn, sideSheet);
             getChildren().add(splitRoot);
 
-            control.profiles().addListener((ListChangeListener<WorkModeProfile>) c -> rebuildCards());
-            control.activeProfileProperty().addListener((obs, o, n) -> rebuildCards());
+            control.profiles().addListener((ListChangeListener<WorkModeProfile>) _ -> rebuildCards());
+            control.activeProfileProperty().addListener((_, _, _) -> rebuildCards());
             rebuildCards();
         }
 
@@ -141,7 +140,7 @@ public final class WorkModes extends Control {
 
             Button saveBtn = new Button("Save Profile");
             saveBtn.getStyleClass().add("ia-btn-marigold");
-            saveBtn.setOnAction(e -> {
+            saveBtn.setOnAction(_ -> {
                 if (editingTarget != null) {
                     WorkModeProfile updated = editingTarget.withEdited(
                             subtitleField.getText().trim(),
@@ -155,7 +154,7 @@ public final class WorkModes extends Control {
             });
 
             Button cancelBtn = new Button("Close");
-            cancelBtn.setOnAction(e -> closeSheet());
+            cancelBtn.setOnAction(_ -> closeSheet());
 
             HBox actions = new HBox(8, saveBtn, cancelBtn);
             sideSheet.getChildren().addAll(sheetTitle, l1, subtitleField, l2, urlField, l3, dnsField, actions);
@@ -261,7 +260,7 @@ public final class WorkModes extends Control {
                 card.getStyleClass().add("work-mode-swatch-active");
             }
             card.setAlignment(Pos.CENTER_LEFT);
-            card.setOnMouseClicked(e -> {
+            card.setOnMouseClicked(_ -> {
                 var cb = getSkinnable().onActivateProfileProperty().get();
                 if (cb != null) cb.accept(p);
             });
