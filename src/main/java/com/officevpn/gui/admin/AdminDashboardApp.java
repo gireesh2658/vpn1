@@ -1,7 +1,6 @@
 package com.officevpn.gui.admin;
 
 import com.officevpn.admin.AdminBootstrap;
-import com.officevpn.admin.DemoSeeder;
 import com.officevpn.config.ConfigUtil;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.gui.UiSafe;
@@ -19,7 +18,6 @@ import org.slf4j.LoggerFactory;
 
 import java.awt.GraphicsEnvironment;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -55,25 +53,20 @@ public final class AdminDashboardApp {
             try {
                 db = new DatabaseManager();
             } catch (Exception ex) {
+                LOGGER.error("Failed to initialize MySQL persistence: {}", ex.getMessage(), ex);
                 UiSafe.showError(null, "MySQL Initialization Failed",
-                        "Unable to connect to MySQL / MariaDB ("
-                                + ConfigUtil.getString("db.host", "127.0.0.1") + ":"
-                                + ConfigUtil.getInt("db.port", 3306) + "/"
-                                + ConfigUtil.getString("db.name", "office_vpn") + ").\n\n"
-                                + "Ensure MySQL / MariaDB is running (e.g., start MySQL in XAMPP Control Panel) "
-                                + "and verify credentials in config.properties.\n\nDetails:\n"
-                                + ex.getMessage());
+                        "Unable to connect to the local MySQL database ("
+                                + ConfigUtil.getDbHost() + ":" + ConfigUtil.getDbPort() + "/"
+                                + ConfigUtil.getDbName() + ").\n\n"
+                                + "Ensure local MySQL Server 8.4 is running and configure external credentials in "
+                                + "~/.officevpn/db.properties, ./config.local.properties, or OFFICEVPN_DB_USER/OFFICEVPN_DB_PASS.");
                 Platform.exit();
                 return;
             }
 
             CompletableFuture<AuditVerifyResult> verifyFuture = db.startBackgroundVerify();
 
-            List<DemoSeeder.DemoAccount> seededDemoAccounts = List.of();
-            if (DemoSeeder.isDemoEnabled()) {
-                seededDemoAccounts = DemoSeeder.seed(db);
-                LOGGER.info("Demo mode enabled: seeded {} temporary account(s) for current session.", seededDemoAccounts.size());
-            } else if (AdminBootstrap.needsBootstrap(db)) {
+            if (AdminBootstrap.needsBootstrap(db)) {
                 Optional<UserAccount> bootstrapped = AdminBootstrapDialog.showSetupDialog(null, db);
                 if (bootstrapped.isEmpty()) {
                     closeQuietly();
@@ -82,7 +75,7 @@ public final class AdminDashboardApp {
                 }
             }
 
-            Optional<UserAccount> loggedIn = AdminLoginDialog.showLoginDialog(null, db, seededDemoAccounts);
+            Optional<UserAccount> loggedIn = AdminLoginDialog.showLoginDialog(null, db);
             if (loggedIn.isEmpty()) {
                 closeQuietly();
                 Platform.exit();

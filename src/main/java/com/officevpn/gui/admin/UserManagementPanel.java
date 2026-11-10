@@ -67,9 +67,12 @@ public final class UserManagementPanel extends VBox {
             String adminUsername,
             Runnable onUsersMutated
     ) {
+        if (adminUsername == null || adminUsername.isBlank()) {
+            throw new IllegalArgumentException("Authenticated administrator username is required");
+        }
         this.db = db;
         this.gatewayServer = gatewayServer;
-        this.adminUsername = adminUsername != null ? adminUsername : "admin_hq";
+        this.adminUsername = adminUsername.trim();
         this.onUsersMutated = onUsersMutated;
 
         setSpacing(14);
@@ -207,7 +210,9 @@ public final class UserManagementPanel extends VBox {
     }
 
     public void refresh() {
+        if (db.isClosed()) return;
         CompletableFuture.supplyAsync(() -> {
+            if (db.isClosed()) return null;
             List<UserAccount> users = db.listAllUsers();
             List<UserRow> rows = new ArrayList<>(users.size());
             for (UserAccount u : users) {
@@ -215,6 +220,7 @@ public final class UserManagementPanel extends VBox {
             }
             return rows;
         }).thenAccept(rows -> Platform.runLater(() -> {
+            if (rows == null) return;
             allRows.clear();
             allRows.addAll(rows);
             applyFilter();
@@ -253,7 +259,7 @@ public final class UserManagementPanel extends VBox {
         genBtn.setOnAction(e -> {
             String generated = PasswordPolicy.generateStrongPassword(16);
             passField.setText(generated);
-            genPreview.setText("Generated (copied): " + generated);
+            genPreview.setText(Messages.get("admin.users.dialog.generatedHidden"));
             UiSafe.copyToClipboard(generated);
         });
 
@@ -323,7 +329,7 @@ public final class UserManagementPanel extends VBox {
         genBtn.setOnAction(e -> {
             String generated = PasswordPolicy.generateStrongPassword(16);
             passField.setText(generated);
-            genPreview.setText("Generated (copied): " + generated);
+            genPreview.setText(Messages.get("admin.users.dialog.generatedHidden"));
             UiSafe.copyToClipboard(generated);
         });
 
@@ -493,6 +499,10 @@ public final class UserManagementPanel extends VBox {
         if (target == null) return;
         runDbTask("Trusting devices...", () -> {
             int n = db.trustAllDevicesForUser(target.username());
+            if (n > 0) {
+                db.logAuditEvent("ALL_DEVICES_TRUSTED", target.username(), target.department().name(),
+                        "All registered devices trusted (count=" + n + ")", adminUsername, "local");
+            }
             return "Marked " + n + " device(s) as TRUSTED for '" + target.username() + "'.";
         });
     }
@@ -506,6 +516,10 @@ public final class UserManagementPanel extends VBox {
         }
         runDbTask("Revoking devices...", () -> {
             int n = db.revokeAllDevicesForUser(target.username());
+            if (n > 0) {
+                db.logAuditEvent("ALL_DEVICES_REVOKED", target.username(), target.department().name(),
+                        "All registered devices revoked (count=" + n + ")", adminUsername, "local");
+            }
             return "Revoked trust on " + n + " device(s) for '" + target.username() + "'.";
         });
     }

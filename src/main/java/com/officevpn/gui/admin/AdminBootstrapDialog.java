@@ -53,7 +53,7 @@ public final class AdminBootstrapDialog {
         sub.getStyleClass().add("page-subtitle");
         sub.setWrapText(true);
 
-        TextField userField = new TextField("admin_hq");
+        TextField userField = new TextField();
         userField.setPromptText("Administrator username (3-32 chars)");
 
         PasswordField passField = new PasswordField();
@@ -121,7 +121,9 @@ public final class AdminBootstrapDialog {
                 createAdminButton.setText(Messages.get("admin.bootstrap.button.create"));
                 if (err != null) {
                     Throwable cause = err.getCause() != null ? err.getCause() : err;
-                    errorLabel.setText("Bootstrap failed: " + cause.getMessage());
+                    errorLabel.setText(cause instanceof IllegalArgumentException
+                            ? cause.getMessage()
+                            : "Unable to create administrator account. Verify MySQL connection and retry.");
                 } else {
                     createdRef[0] = account;
                     stage.close();

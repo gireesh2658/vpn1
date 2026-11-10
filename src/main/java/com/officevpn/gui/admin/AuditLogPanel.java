@@ -196,6 +196,7 @@ public final class AuditLogPanel extends VBox {
     }
 
     public void refresh() {
+        if (db.isClosed()) return;
         String userQ = usernameFilter.getText() != null ? usernameFilter.getText().trim() : "";
         String evRaw = eventFilter.getEditor() != null && eventFilter.getEditor().getText() != null
                 ? eventFilter.getEditor().getText().trim()
@@ -203,6 +204,7 @@ public final class AuditLogPanel extends VBox {
         String evQ = ("ALL EVENTS".equalsIgnoreCase(evRaw) || evRaw.isEmpty()) ? null : evRaw;
 
         CompletableFuture.supplyAsync(() -> {
+            if (db.isClosed()) return null;
             if (userQ.isEmpty() && evQ == null) {
                 return db.getRecentAuditLogs(400);
             }
@@ -210,6 +212,7 @@ public final class AuditLogPanel extends VBox {
                     userQ.isEmpty() ? null : userQ, evQ, null, null);
             return found.size() > 500 ? found.subList(0, 500) : found;
         }).thenAccept(list -> Platform.runLater(() -> {
+            if (list == null) return;
             table.getItems().setAll(list);
             countPill.setText(list.size() + " Events");
         }));

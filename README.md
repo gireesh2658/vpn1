@@ -90,20 +90,20 @@ Client                                                              Server
 ### Prerequisites
 - JDK 25 LTS installed and on `PATH`
 - Apache Maven 3.9+
-- Running MySQL 8+ or MariaDB 10.4+ instance (auto-creates `office_vpn` schema; configure credentials in `src/main/resources/config.properties` or via `-Dofficevpn.db.*` / `OFFICEVPN_DB_*` environment variables)
+- Running local MySQL 8+ instance (auto-initializes `office_vpn` schema; supply `db.user` / `db.password` externally via `~/.officevpn/db.properties`, `./config.local.properties`, `-Dofficevpn.db.*`, or `OFFICEVPN_DB_*` environment variables)
 
 ### Build & Run Full Verification Suite
 ```bash
 mvn clean verify -Pstrict -Djava.awt.headless=true
 ```
 *(In Windows PowerShell, quote `-D` flags: `mvn clean verify -Pstrict "-Djava.awt.headless=true"`.)*
-This compiles with `-Xlint:all -Werror`, executes all **28 JUnit 5 tests** across 9 test suites (including full end-to-end encrypted wire, MFA, vault, password rotation, device trust, and live Ivory Atelier adapter tests), and produces two shaded executable JARs in `target/`:
+This compiles with `-Xlint:all -Werror`, executes all **28 JUnit 5 tests** across 9 test suites (including full end-to-end encrypted wire, MFA, vault, password rotation, device trust, RBAC authorization, and live Ivory Atelier adapter tests), and produces two shaded executable JARs in `target/`:
 - `target/office-vpn-server.jar`
 - `target/office-vpn-client.jar`
 
 ### First-Run Setup & Running Applications
-On first startup with a fresh MySQL database (`office_vpn`), the server initializes InnoDB tables + append-only `audit_logs` triggers and launches the **Initial Administrator Setup**:
-1. Start MySQL / MariaDB on `127.0.0.1:3306` (default `db.user=root`, empty `db.password`, or override in `src/main/resources/config.properties`).
+On first startup with an empty MySQL database (`office_vpn`), the server initializes InnoDB tables + append-only `audit_logs` triggers and launches the **Initial Administrator Setup**:
+1. Start local **MySQL Server 8.4** on `127.0.0.1:3306` and provide external credentials (`db.user` / `db.password`) in `~/.officevpn/db.properties` or `./config.local.properties`.
 2. Launch the **Admin Gateway Console**:
    ```bash
    java -jar target/office-vpn-server.jar
@@ -125,19 +125,14 @@ On first startup with a fresh MySQL database (`office_vpn`), the server initiali
    java -cp target/office-vpn-client.jar com.officevpn.client.ConsoleClient
    java -cp target/office-vpn-client.jar com.officevpn.ui.ComponentGallery
    ```
-4. Enter the administrator username and a strong passphrase meeting policy requirements (min 12 characters with upper, lower, numeric, and symbol chars).
+4. Create the initial Headquarters administrator username and a strong passphrase meeting policy requirements (min 12 characters with upper, lower, numeric, and symbol chars).
 5. Unlock or create the encrypted RSA-2048 identity keystore (`server_data/server_identity.key`) via `OFFICEVPN_KEYSTORE_PASS` or the interactive dialog.
-
-> **Testing / Grading Demo Mode:** To auto-seed runtime-generated strong demo accounts (`admin_hq`, `alice_fin`, `bob_hr`, `charlie_it`, `david_auditor` — with ephemeral session passwords displayed cleanly in the demo banner rather than hardcoded in source):
-> ```bash
-> java "-Dofficevpn.demo=true" -jar target/office-vpn-server.jar
-> ```
 
 ---
 
 ## 5. Project Structure & Configuration
 
-All network hosts, ports, data directories, virtual IP subnets, split-tunnel routes, and database pool settings are centralized in `src/main/resources/config.properties` (`ConfigUtil`). All desktop UI strings are externalized in `src/main/resources/i18n/messages.properties` (`Messages`).
+All non-secret network, port, data directory, subnet, and pool settings are centralized in `src/main/resources/config.properties` (`ConfigUtil`), overlaid cleanly by external `~/.officevpn/db.properties` and `./config.local.properties`. All desktop UI strings are externalized in `src/main/resources/i18n/messages.properties` (`Messages`).
 
 ```
 office-vpn-system/
@@ -151,7 +146,7 @@ office-vpn-system/
 `-- src/
     `-- main/
         |-- java/com/officevpn/
-        |   |-- admin/                   # User lifecycle, policies, DemoSeeder, alerts, metrics, audit service
+        |   |-- admin/                   # User lifecycle, bootstrap, policies, alerts, metrics, audit service
         |   |-- client/                  # Client engine, auto-reconnect, TOFU policies, ConsoleClient CLI
         |   |-- config/                  # ConfigUtil & Messages (ResourceBundle i18n helper)
         |   |-- db/                      # MySQL HikariCP connection pooling, schema init, HMAC audit chain

@@ -49,9 +49,8 @@ import java.util.function.LongSupplier;
  * Enforces parameter binding via {@link PreparedStatement} exclusively to prevent SQL injection.
  * <p>
  * <b>CREDENTIALS &amp; SECURITY POLICY:</b><br>
- * Raw passwords are never stored, logged, or serialized. Accounts are initialized through
- * {@link com.officevpn.admin.AdminBootstrap} on first run or seeded dynamically via
- * {@link com.officevpn.admin.DemoSeeder} when {@code -Dofficevpn.demo=true} is explicitly passed.
+ * Raw passwords are never stored, logged, or serialized. The initial administrator account is
+ * established exclusively through {@link com.officevpn.admin.AdminBootstrap} on first run.
  * Any legacy prototype credentials are automatically neutralized on startup.
  */
 public final class DatabaseManager implements AutoCloseable {
@@ -286,6 +285,10 @@ public final class DatabaseManager implements AutoCloseable {
     }
 
     private synchronized void initConnection() {
+        if (isMySqlBackend && (this.dbUser == null || this.dbUser.isBlank())) {
+            throw new IllegalStateException(
+                    "MySQL database credentials are not configured. Set db.user/db.password externally in ~/.officevpn/db.properties, ./config.local.properties, or OFFICEVPN_DB_USER/OFFICEVPN_DB_PASS.");
+        }
         try {
             HikariConfig config = new HikariConfig();
             config.setJdbcUrl(this.jdbcUrl);
@@ -322,7 +325,8 @@ public final class DatabaseManager implements AutoCloseable {
                     LOGGER.debug("Ignoring datasource close failure after init error: {}", closeEx.getMessage());
                 }
             }
-            throw new IllegalStateException("Failed to initialize database connection pool for " + jdbcUrl + ": " + e.getMessage(), e);
+            LOGGER.error("Database connection pool initialization failed: {}", e.getMessage());
+            throw new IllegalStateException("Unable to connect to local MySQL database.", e);
         }
     }
 

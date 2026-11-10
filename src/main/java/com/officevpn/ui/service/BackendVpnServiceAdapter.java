@@ -1,15 +1,19 @@
 package com.officevpn.ui.service;
 
+import com.officevpn.admin.AdminLoginPolicy;
 import com.officevpn.admin.AuditService;
 import com.officevpn.admin.MetricsCollector;
 import com.officevpn.client.VpnClientEngine;
 import com.officevpn.config.ConfigUtil;
 import com.officevpn.db.DatabaseManager;
 import com.officevpn.model.AuditVerifyResult;
+import com.officevpn.model.Department;
+import com.officevpn.model.Role;
 import com.officevpn.model.UserAccount;
 import com.officevpn.protocol.VpnPacket;
 import com.officevpn.security.KillSwitchManager;
 import com.officevpn.security.TrustedFingerprintStore;
+import com.officevpn.server.ServerEventListener;
 import com.officevpn.server.VpnGatewayServer;
 import com.officevpn.server.VpnSession;
 import com.officevpn.tunnel.TunnelManager;
@@ -70,8 +74,10 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     private final AuditService auditService;
     private final ExecutorService ioExecutor;
 
+    private final String authorizedAdminUsername;
     private VpnClientEngine.ClientEventListener engineListener;
     private KillSwitchManager.KillSwitchListener killSwitchListener;
+    private ServerEventListener serverListener;
     private volatile String authenticatedUsername = "";
     private volatile char[] activePassword = new char[0];
     private volatile String activeOtp = "";
@@ -82,6 +88,19 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
             DatabaseManager databaseManager,
             VpnGatewayServer gatewayServer
     ) {
+        this(engine, fingerprintStore, databaseManager, gatewayServer, null);
+    }
+
+    public BackendVpnServiceAdapter(
+            VpnClientEngine engine,
+            TrustedFingerprintStore fingerprintStore,
+            DatabaseManager databaseManager,
+            VpnGatewayServer gatewayServer,
+            String authorizedAdminUsername
+    ) {
+        this.authorizedAdminUsername = (authorizedAdminUsername != null && !authorizedAdminUsername.isBlank())
+                ? authorizedAdminUsername.trim()
+                : null;
         this.ownsEngine = (engine == null);
         this.engine = (engine != null) ? engine : new VpnClientEngine();
         this.fingerprintStore = fingerprintStore != null ? fingerprintStore : new TrustedFingerprintStore();
@@ -211,6 +230,22 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 }
             });
             engine.getKillSwitchManager().addListener(killSwitchListener);
+        }
+
+        if (gatewayServer != null) {
+            serverListener = new ServerEventListener() {
+                @Override public void onServerLog(String message) {}
+                @Override public void onPacketSniffed(VpnPacket rawPacket, String direction) {}
+                @Override
+                public void onSessionUpdated() {
+                    if (!ioExecutor.isShutdown()) {
+                        syncRosterFromGateway();
+                        refreshAuditLog();
+                    }
+                }
+                @Override public void onChatBroadcast(String senderUser, String senderDept, String senderVip, String message) {}
+            };
+            gatewayServer.addServerEventListener(serverListener);
         }
     }
 
@@ -359,8 +394,35 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         });
     }
 
+    private String requireAuthorizedAdminActor() {
+        if (authorizedAdminUsername != null && databaseManager != null && !databaseManager.isClosed()) {
+            UserAccount account = databaseManager.getUserByUsername(authorizedAdminUsername);
+            if (AdminLoginPolicy.canLoginAsAdmin(account)) {
+                return account.username();
+            }
+        }
+        if (engine != null && engine.isAuthenticated()
+                && engine.getRole() == Role.ADMIN
+                && engine.getDepartment() == Department.HEADQUARTERS) {
+            if (databaseManager == null || databaseManager.isClosed()
+                    || AdminLoginPolicy.canLoginAsAdmin(databaseManager.getUserByUsername(engine.getUsername()))) {
+                return engine.getUsername();
+            }
+        }
+        String deniedActor = (engine != null && engine.getUsername() != null && !engine.getUsername().isBlank())
+                ? engine.getUsername()
+                : (authorizedAdminUsername != null ? authorizedAdminUsername : "UNAUTHENTICATED");
+        if (databaseManager != null && !databaseManager.isClosed()) {
+            databaseManager.logAuditEvent("UNAUTHORIZED_ADMIN_OP", deniedActor, "UNKNOWN",
+                    "Denied session revocation without active HEADQUARTERS ADMIN authorization",
+                    deniedActor, "local");
+        }
+        throw new SecurityException("Active Headquarters ADMIN authorization required for session revocation.");
+    }
+
     @Override
     public void revokeSession(String sessionId) {
+        String actor = requireAuthorizedAdminActor();
         String targetUsername = sessionId;
         for (EmployeeSessionItem item : delegate.activeRoster()) {
             if (Objects.equals(item.sessionId(), sessionId)) {
@@ -372,7 +434,6 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         if (gatewayServer != null && targetUsername != null && !targetUsername.isBlank()) {
             final String resolvedUser = targetUsername;
             ioExecutor.submit(() -> {
-                String actor = engine.getUsername() != null ? engine.getUsername() : "admin";
                 gatewayServer.disconnectUser(resolvedUser, "Revoked via Ivory Atelier console", actor);
                 syncRosterFromGateway();
                 refreshAuditLog();
@@ -583,6 +644,9 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         }
         if (killSwitchListener != null && engine.getKillSwitchManager() != null) {
             engine.getKillSwitchManager().removeListener(killSwitchListener);
+        }
+        if (serverListener != null && gatewayServer != null) {
+            gatewayServer.removeServerEventListener(serverListener);
         }
         if (ownsEngine) {
             engine.close();

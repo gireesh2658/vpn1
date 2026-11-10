@@ -49,8 +49,8 @@ public final class SignInCard extends Control {
     private static final PseudoClass PC_OTP_ERROR = PseudoClass.getPseudoClass("otp-error");
 
     private final ObjectProperty<CredentialVerifier> verifier = new SimpleObjectProperty<>(
-            (u, p, otp) -> CompletableFuture.completedFuture(new AuthResult("123456".equals(otp), false,
-                    "123456".equals(otp) ? "Authenticated cleanly" : "Invalid 6-digit authenticator code")));
+            (u, p, otp) -> CompletableFuture.completedFuture(new AuthResult(false, false,
+                    "Bind SignInCard to a live VpnClientService before authenticating")));
     private final ObjectProperty<Consumer<String>> onSsoRequested = new SimpleObjectProperty<>(provider -> {});
     private final ObjectProperty<Consumer<AuthResult>> onAuthenticated = new SimpleObjectProperty<>(res -> {});
 
@@ -95,11 +95,11 @@ public final class SignInCard extends Control {
     private static final class SignInCardSkin extends SkinBase<SignInCard> {
 
         private final VBox root = new VBox(14);
-        private final TextField userField = new TextField("a.mehta@officevpn.local");
+        private final TextField userField = new TextField();
         private final PasswordField passField = new PasswordField();
         private final HBox otpRow = new HBox(6);
         private final TextField[] otpCells = new TextField[6];
-        private final Label feedbackLabel = new Label("Enter 6-digit authenticator code (demo: 123456)");
+        private final Label feedbackLabel = new Label("Enter your 6-digit authenticator code (if MFA is enabled)");
         private final Button signInBtn = new Button("Verify & Authenticate");
 
         SignInCardSkin(SignInCard control) {
@@ -114,13 +114,13 @@ public final class SignInCard extends Control {
             Label sub = new Label("Authenticate workspace credentials and hardware OTP");
             sub.getStyleClass().add("ia-subtitle");
 
-            Label uLbl = new Label("Workspace Email");
+            Label uLbl = new Label("Workspace Username");
             uLbl.getStyleClass().add("ia-section-label");
-            userField.setPromptText("employee@officevpn.local");
+            userField.setPromptText("Employee username");
 
             Label pLbl = new Label("Passphrase");
             pLbl.getStyleClass().add("ia-section-label");
-            passField.setText("Staff#Keycard2026!");
+            passField.setPromptText("Account passphrase");
 
             Label oLbl = new Label("6-Digit Authenticator OTP");
             oLbl.getStyleClass().add("ia-section-label");

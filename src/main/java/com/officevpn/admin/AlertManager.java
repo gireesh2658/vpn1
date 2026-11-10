@@ -79,6 +79,9 @@ public final class AlertManager {
      * Returns all unread system alerts.
      */
     public List<SystemAlert> getUnreadAlerts() {
+        if (databaseManager.isClosed()) {
+            return List.of();
+        }
         return mapRecords(databaseManager.listAlerts(true, null));
     }
 
@@ -86,6 +89,9 @@ public final class AlertManager {
      * Returns alerts matching the specified severity filter.
      */
     public List<SystemAlert> getAlertsBySeverity(AlertSeverity severity) {
+        if (databaseManager.isClosed()) {
+            return List.of();
+        }
         if (severity == null) {
             return mapRecords(databaseManager.listAlerts(false, null));
         }
@@ -96,6 +102,9 @@ public final class AlertManager {
      * Returns all recorded alerts.
      */
     public List<SystemAlert> getAllAlerts() {
+        if (databaseManager.isClosed()) {
+            return List.of();
+        }
         return mapRecords(databaseManager.listAlerts(false, null));
     }
 
@@ -110,6 +119,9 @@ public final class AlertManager {
      * Returns count of unread CRITICAL severity alerts for GUI badge display.
      */
     public int getUnreadCriticalCount() {
+        if (databaseManager.isClosed()) {
+            return 0;
+        }
         return databaseManager.countUnreadCriticalAlerts();
     }
 
@@ -117,6 +129,9 @@ public final class AlertManager {
      * Returns total unread alert count.
      */
     public int getUnreadCount() {
+        if (databaseManager.isClosed()) {
+            return 0;
+        }
         return databaseManager.countUnreadAlerts();
     }
 

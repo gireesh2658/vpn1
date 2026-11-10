@@ -81,16 +81,24 @@ public final class AlertsPanel extends VBox {
         markReadButton.setOnAction(e -> {
             AlertManager.SystemAlert sel = table.getSelectionModel().getSelectedItem();
             if (sel == null) return;
+            markReadButton.setDisable(true);
             CompletableFuture.runAsync(() -> alertManager.markAlertRead(sel.id()))
-                    .thenRun(() -> Platform.runLater(this::notifyRefresh));
+                    .whenComplete((v, err) -> Platform.runLater(() -> {
+                        markReadButton.setDisable(table.getSelectionModel().getSelectedItem() == null);
+                        notifyRefresh();
+                    }));
         });
 
         Button markAllReadButton = new Button(Messages.get("admin.alerts.button.markAllRead"));
         markAllReadButton.getStyleClass().add("btn-secondary");
         markAllReadButton.setOnAction(e -> {
             List<AlertManager.SystemAlert> items = List.copyOf(table.getItems());
+            markAllReadButton.setDisable(true);
             CompletableFuture.runAsync(() -> items.stream().filter(a -> !a.isRead()).forEach(a -> alertManager.markAlertRead(a.id())))
-                    .thenRun(() -> Platform.runLater(this::notifyRefresh));
+                    .whenComplete((v, err) -> Platform.runLater(() -> {
+                        markAllReadButton.setDisable(false);
+                        notifyRefresh();
+                    }));
         });
 
         Button purgeAlertsButton = new Button(Messages.get("admin.alerts.button.purge"));
@@ -104,8 +112,14 @@ public final class AlertsPanel extends VBox {
                 try {
                     int days = Integer.parseInt(s.trim());
                     if (days < 1) throw new NumberFormatException();
+                    purgeAlertsButton.setDisable(true);
                     CompletableFuture.supplyAsync(() -> alertManager.clearOldAlerts(days))
-                            .thenAccept(removed -> Platform.runLater(() -> {
+                            .whenComplete((removed, err) -> Platform.runLater(() -> {
+                                purgeAlertsButton.setDisable(false);
+                                if (err != null) {
+                                    UiSafe.showError(UiSafe.windowOf(this), "Purge Failed", "Could not purge historical alerts.");
+                                    return;
+                                }
                                 notifyRefresh();
                                 UiSafe.showInfo(UiSafe.windowOf(this), "Alerts Purged",
                                         "Removed " + removed + " alert(s) older than " + days + " days.");

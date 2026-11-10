@@ -205,17 +205,21 @@ class VpnEndToEndWorkflowTest {
         Path csvExport = tempDir.resolve("atelier-audit.csv");
 
         String userPw = "Charlie#Atelier2026!";
+        String adminPw = "Headquarters#Admin2026!";
 
         try (DatabaseManager db = new DatabaseManager(newH2MySqlUrl("e2e_adapter"), new AuditKeyStore(dbKeyDir))) {
             VaultManager vault = new VaultManager(vaultDir);
             ServerIdentity identity = ServerIdentity.createEphemeral();
+            db.createUser("admin_hq", adminPw.toCharArray(), Department.HEADQUARTERS, Role.ADMIN, "BOOTSTRAP");
             db.createUser("charlie_hr", userPw.toCharArray(), Department.HR, Role.EMPLOYEE, "admin_hq");
 
             try (VpnGatewayServer server = new VpnGatewayServer(db, vault, identity)) {
                 server.start(0);
                 try (VpnClientEngine engine = new VpnClientEngine();
                      BackendVpnServiceAdapter adapter = new BackendVpnServiceAdapter(
-                             engine, new TrustedFingerprintStore(pinFile), db, server)) {
+                             engine, new TrustedFingerprintStore(pinFile), db, server);
+                     BackendVpnServiceAdapter adminAdapter = new BackendVpnServiceAdapter(
+                             null, null, db, server, "admin_hq")) {
 
                     var badAuth = adapter.authenticate("charlie_hr", "Wrong#Pass2026!", "").get(5, TimeUnit.SECONDS);
                     assertFalse(badAuth.success());
@@ -229,7 +233,8 @@ class VpnEndToEndWorkflowTest {
                     while (System.currentTimeMillis() < deadline
                             && (adapter.connectionStateProperty().get() != ConnectionState.CONNECTED
                             || adapter.activeRoster().isEmpty()
-                            || adapter.auditEvents().isEmpty())) {
+                            || adapter.auditEvents().isEmpty()
+                            || adminAdapter.activeRoster().isEmpty())) {
                         Thread.sleep(25);
                     }
 
@@ -239,14 +244,16 @@ class VpnEndToEndWorkflowTest {
                     assertTrue(adapter.exportAuditCsv(csvExport));
                     assertTrue(Files.readString(csvExport).contains("AUTH_SUCCESS"));
 
-                    String sessionId = adapter.activeRoster().get(0).sessionId();
-                    adapter.revokeSession(sessionId);
+                    String sessionId = adminAdapter.activeRoster().get(0).sessionId();
+                    assertThrows(SecurityException.class, () -> adapter.revokeSession(sessionId),
+                            "Ordinary employee must not be allowed to revoke VPN sessions");
+                    adminAdapter.revokeSession(sessionId);
 
                     deadline = System.currentTimeMillis() + 3000;
                     while (System.currentTimeMillis() < deadline && !server.getActiveSessions().isEmpty()) {
                         Thread.sleep(25);
                     }
-                    assertTrue(server.getActiveSessions().isEmpty(), "Revoking session via adapter must close gateway session");
+                    assertTrue(server.getActiveSessions().isEmpty(), "Admin revocation via adapter must close gateway session");
 
                     adapter.disconnect();
                     deadline = System.currentTimeMillis() + 2000;

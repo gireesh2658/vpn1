@@ -53,8 +53,11 @@ public final class ConnectedClientsPanel extends VBox {
     private final List<SessionRow> allRows = new ArrayList<>();
 
     public ConnectedClientsPanel(VpnGatewayServer gatewayServer, String adminUsername) {
+        if (adminUsername == null || adminUsername.isBlank()) {
+            throw new IllegalArgumentException("Authenticated administrator username is required");
+        }
         this.gatewayServer = gatewayServer;
-        this.adminUsername = adminUsername != null ? adminUsername : "admin_hq";
+        this.adminUsername = adminUsername.trim();
         setSpacing(14);
         setPadding(new Insets(18));
         buildUi();

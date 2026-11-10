@@ -3,6 +3,7 @@ package com.officevpn.gui.admin;
 import com.officevpn.admin.ConfigManager;
 import com.officevpn.config.Messages;
 import com.officevpn.gui.UiSafe;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -15,6 +16,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * JavaFX Allowlisted Runtime Configuration Governance Panel.
@@ -32,8 +34,11 @@ public final class ConfigPanel extends VBox {
     private final Label feedbackLabel = new Label("");
 
     public ConfigPanel(ConfigManager configManager, String adminUsername) {
+        if (adminUsername == null || adminUsername.isBlank()) {
+            throw new IllegalArgumentException("Authenticated administrator username is required");
+        }
         this.configManager = configManager;
-        this.adminUsername = adminUsername != null ? adminUsername : "admin_hq";
+        this.adminUsername = adminUsername.trim();
         setSpacing(14);
         setPadding(new Insets(18));
         buildUi();
@@ -62,9 +67,18 @@ public final class ConfigPanel extends VBox {
             if (UiSafe.showConfirm(UiSafe.windowOf(this), "Reset Configuration",
                     "Reset all allowlisted runtime parameters back to factory defaults?",
                     "This action is logged to the immutable audit trail.")) {
-                configManager.resetToDefaults(adminUsername);
-                refresh();
-                feedbackLabel.setText("All allowlisted settings reset to factory defaults.");
+                resetDefaultsButton.setDisable(true);
+                CompletableFuture.runAsync(() -> configManager.resetToDefaults(adminUsername))
+                        .whenComplete((v, err) -> Platform.runLater(() -> {
+                            resetDefaultsButton.setDisable(false);
+                            if (err != null) {
+                                Throwable cause = err.getCause() != null ? err.getCause() : err;
+                                UiSafe.showError(UiSafe.windowOf(this), "Reset Failed", cause.getMessage());
+                            } else {
+                                refresh();
+                                feedbackLabel.setText("All allowlisted settings reset to factory defaults.");
+                            }
+                        }));
             }
         });
         header.getChildren().addAll(titleBox, spacer, refreshButton, resetDefaultsButton);
@@ -106,13 +120,20 @@ public final class ConfigPanel extends VBox {
             String k = selectedKeyField.getText();
             String v = newValueField.getText();
             if (k == null || k.isBlank() || v == null) return;
-            try {
-                configManager.setConfig(adminUsername, k.trim(), v.trim());
-                refresh();
-                feedbackLabel.setText("Saved '" + k.trim() + "' = '" + v.trim() + "' cleanly.");
-            } catch (IllegalArgumentException ex) {
-                UiSafe.showError(UiSafe.windowOf(this), "Validation Rejected", ex.getMessage());
-            }
+            String cleanKey = k.trim();
+            String cleanVal = v.trim();
+            saveSettingButton.setDisable(true);
+            CompletableFuture.runAsync(() -> configManager.setConfig(adminUsername, cleanKey, cleanVal))
+                    .whenComplete((res, err) -> Platform.runLater(() -> {
+                        saveSettingButton.setDisable(table.getSelectionModel().getSelectedItem() == null);
+                        if (err != null) {
+                            Throwable cause = err.getCause() != null ? err.getCause() : err;
+                            UiSafe.showError(UiSafe.windowOf(this), "Validation Rejected", cause.getMessage());
+                        } else {
+                            refresh();
+                            feedbackLabel.setText("Saved '" + cleanKey + "' = '" + cleanVal + "' cleanly.");
+                        }
+                    }));
         });
 
         feedbackLabel.getStyleClass().add("muted-label");

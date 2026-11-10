@@ -1,6 +1,5 @@
 package com.officevpn.gui.admin;
 
-import com.officevpn.admin.DemoSeeder;
 import com.officevpn.config.Messages;
 import com.officevpn.gui.UiSafe;
 import com.officevpn.security.IdentityException;
@@ -82,8 +81,8 @@ public final class AdminIdentityDialog {
         CheckBox ephemeralCheck = new CheckBox(Messages.get("admin.identity.checkbox.ephemeral"));
         ephemeralCheck.setWrapText(true);
         ephemeralCheck.setSelected(false);
-        ephemeralCheck.setVisible(!exists || DemoSeeder.isDemoEnabled());
-        ephemeralCheck.setManaged(!exists || DemoSeeder.isDemoEnabled());
+        ephemeralCheck.setVisible(!exists);
+        ephemeralCheck.setManaged(!exists);
 
         Label errorLabel = new Label("");
         errorLabel.setStyle("-fx-text-fill: #f87171; -fx-font-weight: bold;");
@@ -94,8 +93,6 @@ public final class AdminIdentityDialog {
         form.getChildren().addAll(new Label(Messages.get("admin.dialog.label.keystorePassphrase")), passField);
         if (!exists) {
             form.getChildren().addAll(new Label(Messages.get("admin.dialog.label.confirmKeystorePassphrase")), confirmField);
-        }
-        if (!exists || DemoSeeder.isDemoEnabled()) {
             form.getChildren().add(ephemeralCheck);
         }
         form.getChildren().add(errorLabel);

@@ -9,13 +9,17 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 
 /**
- * Central configuration manager. Loads configuration from classpath `/config.properties`
- * or filesystem, creating default configuration if absent.
+ * Central configuration manager. Loads base configuration from classpath {@code /config.properties},
+ * then overlays external host/database properties from {@code ~/.officevpn/db.properties}
+ * and {@code ./config.local.properties} (keeping credentials outside source control).
  */
 public final class ConfigUtil {
 
@@ -32,32 +36,54 @@ public final class ConfigUtil {
     private ConfigUtil() {}
 
     public static synchronized void loadProperties() {
-        // 1. Try loading from classpath
+        boolean loadedBase = false;
+        // 1. Load base defaults from classpath
         try (InputStream in = ConfigUtil.class.getResourceAsStream(DEFAULT_RESOURCE)) {
             if (in != null) {
                 PROPERTIES.load(in);
+                loadedBase = true;
                 LOGGER.info("Loaded configuration from classpath resource: {}", DEFAULT_RESOURCE);
-                return;
             }
         } catch (IOException e) {
             LOGGER.warn("Failed to load configuration from classpath: {}", e.getMessage());
         }
 
-        // 2. Try loading from filesystem
-        File file = new File(FS_CONFIG_PATH);
-        if (file.exists()) {
-            try (InputStream fin = new FileInputStream(file)) {
-                PROPERTIES.load(fin);
-                LOGGER.info("Loaded configuration from file: {}", file.getAbsolutePath());
-                return;
-            } catch (IOException e) {
-                LOGGER.warn("Failed to load configuration from file {}: {}", file.getAbsolutePath(), e.getMessage());
+        // 2. Fallback to repository resource file if classpath missing
+        File fsDefault = new File(FS_CONFIG_PATH);
+        if (!loadedBase) {
+            if (fsDefault.exists()) {
+                try (InputStream fin = new FileInputStream(fsDefault)) {
+                    PROPERTIES.load(fin);
+                    loadedBase = true;
+                    LOGGER.info("Loaded configuration from file: {}", fsDefault.getAbsolutePath());
+                } catch (IOException e) {
+                    LOGGER.warn("Failed to load configuration from file {}: {}", fsDefault.getAbsolutePath(), e.getMessage());
+                }
+            }
+            if (!loadedBase) {
+                populateDefaults();
+                saveDefaultFileIfPossible(fsDefault);
             }
         }
 
-        // 3. Populate and write defaults
-        populateDefaults();
-        saveDefaultFileIfPossible(file);
+        // 3. Overlay externalized local credentials / overrides outside JAR & repository
+        String home = System.getProperty("user.home", "");
+        if (!home.isBlank()) {
+            overlayExternalFile(Paths.get(home, ".officevpn", "db.properties"));
+        }
+        overlayExternalFile(Paths.get("config.local.properties"));
+    }
+
+    private static void overlayExternalFile(Path path) {
+        if (path == null || !Files.isRegularFile(path)) {
+            return;
+        }
+        try (InputStream in = Files.newInputStream(path)) {
+            PROPERTIES.load(in);
+            LOGGER.info("Applied external configuration overrides from {}", path.toAbsolutePath());
+        } catch (IOException e) {
+            LOGGER.warn("Failed to load external configuration overrides from {}: {}", path, e.getMessage());
+        }
     }
 
     private static void populateDefaults() {
@@ -70,7 +96,7 @@ public final class ConfigUtil {
         PROPERTIES.setProperty("db.host", "127.0.0.1");
         PROPERTIES.setProperty("db.port", "3306");
         PROPERTIES.setProperty("db.name", "office_vpn");
-        PROPERTIES.setProperty("db.user", "root");
+        PROPERTIES.setProperty("db.user", "");
         PROPERTIES.setProperty("db.password", "");
         PROPERTIES.setProperty("db.pool.maxSize", "12");
         PROPERTIES.setProperty("db.url", "");
@@ -227,7 +253,7 @@ public final class ConfigUtil {
     }
 
     public static String getDbUser() {
-        return getConfigOverride("officevpn.db.user", "OFFICEVPN_DB_USER", "db.user", "root");
+        return getConfigOverride("officevpn.db.user", "OFFICEVPN_DB_USER", "db.user", "");
     }
 
     public static String getDbPassword() {

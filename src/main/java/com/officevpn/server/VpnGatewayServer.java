@@ -30,6 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -596,6 +597,13 @@ public final class VpnGatewayServer implements AutoCloseable {
         }
         if (threadPool != null) {
             threadPool.shutdownNow();
+            try {
+                if (!threadPool.awaitTermination(1500, TimeUnit.MILLISECONDS)) {
+                    LOGGER.debug("Timed out waiting for client handler threads to drain on stop()");
+                }
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
         }
         log("Headquarters VPN Gateway Server stopped.");
     }

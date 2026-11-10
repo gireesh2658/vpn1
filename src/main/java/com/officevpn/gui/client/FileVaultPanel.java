@@ -36,6 +36,9 @@ public final class FileVaultPanel extends VBox {
     private final TableView<VaultFileRow> table = new TableView<>();
     private final Label statusLabel = new Label("Select a vault and refresh to list encrypted files.");
     private final Label rbacPill = new Label("");
+    private Button refreshButton;
+    private Button uploadButton;
+    private Button downloadButton;
 
     public FileVaultPanel(VpnClientEngine engine) {
         this.engine = engine;
@@ -74,21 +77,21 @@ public final class FileVaultPanel extends VBox {
         vaultSelector.setValue(engine.getDepartment() != null ? engine.getDepartment() : Department.IT);
         vaultSelector.setOnAction(e -> refreshFiles());
 
-        Button refreshButton = new Button(Messages.get("vault.button.refresh"));
+        refreshButton = new Button(Messages.get("vault.button.refresh"));
         refreshButton.getStyleClass().add("btn-secondary");
         Messages.configureAccessibleControl(refreshButton,
                 Messages.get("vault.button.refresh"),
                 Messages.get("vault.tooltip.refresh"));
         refreshButton.setOnAction(e -> refreshFiles());
 
-        Button uploadButton = new Button(Messages.get("vault.button.upload"));
+        uploadButton = new Button(Messages.get("vault.button.upload"));
         uploadButton.getStyleClass().add("btn-primary");
         Messages.configureAccessibleControl(uploadButton,
                 Messages.get("vault.button.upload"),
                 Messages.get("vault.tooltip.upload"));
         uploadButton.setOnAction(e -> handleUpload());
 
-        Button downloadButton = new Button(Messages.get("vault.button.download"));
+        downloadButton = new Button(Messages.get("vault.button.download"));
         downloadButton.getStyleClass().add("btn-success");
         downloadButton.setDisable(true);
         Messages.configureAccessibleControl(downloadButton,
@@ -134,9 +137,17 @@ public final class FileVaultPanel extends VBox {
         getChildren().addAll(header, card);
     }
 
+    private void setTransferBusy(boolean busy) {
+        vaultSelector.setDisable(busy);
+        if (refreshButton != null) refreshButton.setDisable(busy);
+        if (uploadButton != null) uploadButton.setDisable(busy);
+        if (downloadButton != null) downloadButton.setDisable(busy || table.getSelectionModel().getSelectedItem() == null);
+    }
+
     public void refreshFiles() {
         Department dept = vaultSelector.getValue();
         if (dept == null) return;
+        setTransferBusy(true);
         statusLabel.setText("Listing files in " + dept + " vault...");
         CompletableFuture.supplyAsync(() -> {
             try {
@@ -145,6 +156,7 @@ public final class FileVaultPanel extends VBox {
                 throw new IllegalStateException(ex.getMessage(), ex);
             }
         }).whenComplete((files, err) -> Platform.runLater(() -> {
+            setTransferBusy(false);
             if (err != null) {
                 Throwable cause = err.getCause() != null ? err.getCause() : err;
                 statusLabel.setText("Vault error: " + cause.getMessage());
@@ -173,6 +185,7 @@ public final class FileVaultPanel extends VBox {
         }
 
         String fileName = selected.getName();
+        setTransferBusy(true);
         statusLabel.setText("Encrypting & uploading " + fileName + " to " + dept + "...");
 
         CompletableFuture.supplyAsync(() -> {
@@ -185,6 +198,7 @@ public final class FileVaultPanel extends VBox {
                 throw new IllegalStateException(ex.getMessage(), ex);
             }
         }).whenComplete((sha256, err) -> Platform.runLater(() -> {
+            setTransferBusy(false);
             if (err != null) {
                 Throwable cause = err.getCause() != null ? err.getCause() : err;
                 statusLabel.setText("Upload failed: " + cause.getMessage());
@@ -207,6 +221,7 @@ public final class FileVaultPanel extends VBox {
         File dest = fc.showSaveDialog(UiSafe.windowOf(this));
         if (dest == null) return;
 
+        setTransferBusy(true);
         statusLabel.setText("Downloading & decrypting " + row.fileName() + "...");
 
         CompletableFuture.supplyAsync(() -> {
@@ -219,6 +234,7 @@ public final class FileVaultPanel extends VBox {
                 throw new IllegalStateException(ex.getMessage(), ex);
             }
         }).whenComplete((res, err) -> Platform.runLater(() -> {
+            setTransferBusy(false);
             if (err != null) {
                 Throwable cause = err.getCause() != null ? err.getCause() : err;
                 statusLabel.setText("Download failed: " + cause.getMessage());

@@ -45,11 +45,6 @@ public final class VpnServer implements AutoCloseable {
     }
 
     public static ServerIdentity resolveServerIdentity() {
-        if (Boolean.getBoolean("officevpn.demo")) {
-            LOGGER.info("Starting with in-memory ephemeral server identity (-Dofficevpn.demo=true)");
-            return ServerIdentity.createEphemeral();
-        }
-
         char[] passphrase = null;
         String envPass = System.getenv("OFFICEVPN_KEYSTORE_PASS");
         if (envPass != null && !envPass.isBlank()) {
@@ -63,7 +58,7 @@ public final class VpnServer implements AutoCloseable {
         if (passphrase == null || passphrase.length == 0) {
             throw new IllegalStateException(
                     "Server identity keystore passphrase required. Provide via OFFICEVPN_KEYSTORE_PASS environment variable, " +
-                    "-Dofficevpn.keystore.pass system property, interactive console, or run with -Dofficevpn.demo=true for ephemeral testing."
+                    "-Dofficevpn.keystore.pass system property, or interactive console."
             );
         }
 

@@ -38,15 +38,20 @@ public final class DevicesPanel extends VBox {
 
     private final DatabaseManager db;
     private final DeviceManager deviceManager;
+    private final String adminUsername;
 
     private final TextField filterField = new TextField();
     private final TableView<DatabaseManager.UserDeviceRecord> table = new TableView<>();
     private final List<DatabaseManager.UserDeviceRecord> allDevices = new ArrayList<>();
     private final Label statusPill = new Label("0 Devices");
 
-    public DevicesPanel(DatabaseManager db, DeviceManager deviceManager) {
+    public DevicesPanel(DatabaseManager db, DeviceManager deviceManager, String adminUsername) {
+        if (adminUsername == null || adminUsername.isBlank()) {
+            throw new IllegalArgumentException("Authenticated administrator username is required");
+        }
         this.db = db;
         this.deviceManager = deviceManager;
+        this.adminUsername = adminUsername.trim();
         setSpacing(14);
         setPadding(new Insets(18));
         buildUi();
@@ -104,14 +109,14 @@ public final class DevicesPanel extends VBox {
         trustDeviceButton.setOnAction(e -> {
             var d = table.getSelectionModel().getSelectedItem();
             if (d == null) return;
-            CompletableFuture.runAsync(() -> deviceManager.trustDevice(d.username(), d.deviceFingerprint()))
+            CompletableFuture.runAsync(() -> deviceManager.trustDevice(d.username(), d.deviceFingerprint(), adminUsername))
                     .thenRun(() -> Platform.runLater(this::refresh));
         });
 
         revokeDeviceButton.setOnAction(e -> {
             var d = table.getSelectionModel().getSelectedItem();
             if (d == null) return;
-            CompletableFuture.runAsync(() -> deviceManager.revokeDevice(d.username(), d.deviceFingerprint()))
+            CompletableFuture.runAsync(() -> deviceManager.revokeDevice(d.username(), d.deviceFingerprint(), adminUsername))
                     .thenRun(() -> Platform.runLater(this::refresh));
         });
 
@@ -182,12 +187,14 @@ public final class DevicesPanel extends VBox {
             UiSafe.showError(UiSafe.windowOf(this), "Validation Error", "Username and device fingerprint are required.");
             return;
         }
-        CompletableFuture.runAsync(() -> deviceManager.registerAndTrustDevice(u, fp, name))
+        CompletableFuture.runAsync(() -> deviceManager.registerAndTrustDevice(u, fp, name, adminUsername))
                 .thenRun(() -> Platform.runLater(this::refresh));
     }
 
     public void refresh() {
-        CompletableFuture.supplyAsync(db::listAllDevices).thenAccept(list -> Platform.runLater(() -> {
+        if (db.isClosed()) return;
+        CompletableFuture.supplyAsync(() -> db.isClosed() ? List.<DatabaseManager.UserDeviceRecord>of() : db.listAllDevices())
+                .thenAccept(list -> Platform.runLater(() -> {
             allDevices.clear();
             allDevices.addAll(list);
             statusPill.setText(allDevices.size() + " Devices");

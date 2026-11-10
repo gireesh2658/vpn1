@@ -96,7 +96,10 @@ public final class AdminDashboardFrame {
         this.stage = stage;
         this.db = db;
         this.gatewayServer = gatewayServer;
-        this.adminUsername = (adminUsername != null && !adminUsername.isBlank()) ? adminUsername : "admin_hq";
+        if (adminUsername == null || adminUsername.isBlank()) {
+            throw new IllegalArgumentException("Authenticated administrator username is required");
+        }
+        this.adminUsername = adminUsername.trim();
 
         this.serverManager = new ServerManager(gatewayServer);
         this.metricsCollector = new MetricsCollector(db, gatewayServer);
@@ -107,7 +110,7 @@ public final class AdminDashboardFrame {
         this.overviewPanel = new OverviewPanel(db, metricsCollector, alertManager, gatewayServer);
         this.connectedClientsPanel = new ConnectedClientsPanel(gatewayServer, this.adminUsername);
         this.userManagementPanel = new UserManagementPanel(db, gatewayServer, this.adminUsername, this::refreshAllLightweight);
-        this.devicesPanel = new DevicesPanel(db, deviceManager);
+        this.devicesPanel = new DevicesPanel(db, deviceManager, this.adminUsername);
         this.alertsPanel = new AlertsPanel(alertManager, this::updateTopAndNavBadges);
         this.configPanel = new ConfigPanel(configManager, this.adminUsername);
         this.auditLogPanel = new AuditLogPanel(db, alertManager);
@@ -341,7 +344,7 @@ public final class AdminDashboardFrame {
             atelierStage.toFront();
             return;
         }
-        atelierService = new BackendVpnServiceAdapter(null, null, db, gatewayServer);
+        atelierService = new BackendVpnServiceAdapter(null, null, db, gatewayServer, this.adminUsername);
         AppShell shell = new AppShell(atelierService);
         shell.switchTo(AppShell.Section.ADMIN);
         Scene scene = new Scene(shell, 1220, 800);

@@ -22,6 +22,7 @@ audit.head
 server_identity.key
 known_gateways.properties*
 client_trusted_fingerprints.properties
+config.local.properties
 *.p12
 *.jks
 server_vaults/
