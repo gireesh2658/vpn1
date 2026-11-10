@@ -27,7 +27,7 @@ import java.util.function.Function;
 
 /**
  * Shared JavaFX UI safety, styling, table configuration, clipboard, and dialog utilities.
- * Neutralizes control characters / directional overrides and applies the Office VPN dark theme consistently.
+ * Neutralizes control characters / directional overrides and applies the Ivory Atelier theme consistently.
  */
 public final class UiSafe {
 
@@ -64,6 +64,7 @@ public final class UiSafe {
         if (scene == null) {
             return;
         }
+        com.officevpn.ui.theme.IvoryTheme.installBase();
         URL cssUrl = UiSafe.class.getResource(THEME_CSS_RESOURCE);
         if (cssUrl != null) {
             String urlStr = cssUrl.toExternalForm();
@@ -77,6 +78,7 @@ public final class UiSafe {
         if (pane == null) {
             return;
         }
+        com.officevpn.ui.theme.IvoryTheme.installBase();
         URL cssUrl = UiSafe.class.getResource(THEME_CSS_RESOURCE);
         if (cssUrl != null) {
             String urlStr = cssUrl.toExternalForm();

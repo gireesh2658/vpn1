@@ -69,7 +69,7 @@ public final class AdminBootstrapDialog {
         strengthLabel.getStyleClass().add("muted-label");
 
         Label errorLabel = new Label("");
-        errorLabel.setStyle("-fx-text-fill: #f87171; -fx-font-weight: bold;");
+        errorLabel.setStyle("-fx-text-fill: #BA2A1A; -fx-font-weight: bold;");
         errorLabel.setWrapText(true);
 
         passField.textProperty().addListener((obs, o, n) -> updateStrength(n, strengthBar, strengthLabel));

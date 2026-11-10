@@ -8,6 +8,7 @@ import com.officevpn.gui.UiSafe;
 import com.officevpn.model.Department;
 import com.officevpn.model.Role;
 import com.officevpn.model.UserAccount;
+import com.officevpn.security.QrCodeUtil;
 import com.officevpn.security.TotpUtil;
 import com.officevpn.server.VpnGatewayServer;
 import javafx.application.Platform;
@@ -22,6 +23,8 @@ import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
+import javafx.scene.image.ImageView;
+import javafx.scene.image.WritableImage;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -185,8 +188,9 @@ public final class UserManagementPanel extends VBox {
         table.getColumns().add(UiSafe.badgeColumn("Role", r -> r.account().role().name(),
                 r -> r.account().role() == Role.ADMIN ? "pill-danger"
                         : (r.account().role() == Role.AUDITOR ? "pill-warning" : "pill-info"), 110));
-        table.getColumns().add(UiSafe.badgeColumn("TOTP 2FA", r -> r.totpEnabled() ? "ENABLED" : "OFF",
-                r -> r.totpEnabled() ? "pill-success" : "pill-muted", 100));
+        table.getColumns().add(UiSafe.badgeColumn("MFA (2FA)",
+                r -> r.totpEnabled() ? "ENABLED (6-digit)" : "OFF (Password Only)",
+                r -> r.totpEnabled() ? "pill-success" : "pill-muted", 145));
         table.getColumns().add(UiSafe.badgeColumn("Status", r -> r.account().active() ? "ACTIVE" : "DISABLED",
                 r -> r.account().active() ? "pill-success" : "pill-danger", 105));
         table.getColumns().add(UiSafe.safeColumn("Created",
@@ -252,7 +256,7 @@ public final class UserManagementPanel extends VBox {
         passField.setPromptText("Min 12 chars with upper, lower, digit, symbol");
         Label genPreview = new Label("");
         genPreview.getStyleClass().add("mono-text");
-        genPreview.setStyle("-fx-text-fill: #22d3ee;");
+        genPreview.setStyle("-fx-text-fill: #096B67;");
 
         Button genBtn = new Button(Messages.get("admin.users.dialog.generate"));
         genBtn.getStyleClass().add("btn-secondary");
@@ -271,12 +275,19 @@ public final class UserManagementPanel extends VBox {
         roleBox.getItems().addAll(Role.values());
         roleBox.setValue(Role.EMPLOYEE);
 
+        Label mfaDefaultNote = new Label(
+                "MFA Note: New accounts start with MFA OFF (sign in with Username + Password only). "
+                        + "To require 6-digit Authenticator codes, select the user afterward and click 'Manage 2FA'.");
+        mfaDefaultNote.getStyleClass().add("muted-label");
+        mfaDefaultNote.setWrapText(true);
+
         VBox content = new VBox(8,
                 new Label(Messages.get("common.label.username")), userField,
                 new Label(Messages.get("admin.users.dialog.add.label.passphrase")), passField,
                 new HBox(8, genBtn, genPreview),
                 new Label(Messages.get("admin.users.dialog.add.label.department")), deptBox,
-                new Label(Messages.get("admin.users.dialog.add.label.role")), roleBox
+                new Label(Messages.get("admin.users.dialog.add.label.role")), roleBox,
+                mfaDefaultNote
         );
         content.setPrefWidth(430);
 
@@ -322,7 +333,7 @@ public final class UserManagementPanel extends VBox {
         passField.setPromptText("New strong passphrase (min 12 chars)");
         Label genPreview = new Label("");
         genPreview.getStyleClass().add("mono-text");
-        genPreview.setStyle("-fx-text-fill: #22d3ee;");
+        genPreview.setStyle("-fx-text-fill: #096B67;");
 
         Button genBtn = new Button(Messages.get("admin.users.dialog.generate"));
         genBtn.getStyleClass().add("btn-secondary");
@@ -460,23 +471,64 @@ public final class UserManagementPanel extends VBox {
             String secret = TotpUtil.generateSecret();
             String encodedUser = java.net.URLEncoder.encode(u.username(), java.nio.charset.StandardCharsets.UTF_8);
             String uri = "otpauth://totp/OfficeVPN:" + encodedUser + "?secret=" + secret + "&issuer=OfficeVPN";
-            VBox box = new VBox(8);
-            Label sLbl = new Label("Base32 Secret: " + secret);
+
+            Label instr = new Label(Messages.get("admin.users.dialog.totp.instruction"));
+            instr.setWrapText(true);
+
+            WritableImage qrImg = QrCodeUtil.toFxImage(QrCodeUtil.encode(uri), 4, 4, 0xFF26233A, 0xFFFFFFFF);
+            ImageView qrView = new ImageView(qrImg);
+            qrView.setPreserveRatio(true);
+            qrView.setFitWidth(180);
+            HBox qrFrame = new HBox(qrView);
+            qrFrame.setAlignment(Pos.CENTER);
+            qrFrame.setPadding(new Insets(10));
+            qrFrame.setStyle("-fx-background-color: #FFFFFF; -fx-border-color: #E6DCC6; -fx-border-radius: 10; -fx-background-radius: 10;");
+
+            Label sLbl = new Label("Manual Setup Key (Base32): " + formatBase32Groups(secret));
             sLbl.getStyleClass().add("mono-text");
-            sLbl.setStyle("-fx-text-fill: #22d3ee; -fx-font-weight: bold;");
+            sLbl.setStyle("-fx-text-fill: #096B67; -fx-font-weight: bold;");
+            sLbl.setWrapText(true);
+
             TextField uriField = new TextField(uri);
             uriField.setEditable(false);
             uriField.getStyleClass().add("mono-text");
+
             Button copyBtn = new Button(Messages.get("admin.users.dialog.totp.copySecret"));
             copyBtn.getStyleClass().add("btn-secondary");
             copyBtn.setOnAction(e -> UiSafe.copyToClipboard(secret));
             Button copyUriBtn = new Button(Messages.get("admin.users.dialog.totp.copyUri"));
             copyUriBtn.getStyleClass().add("btn-secondary");
             copyUriBtn.setOnAction(e -> UiSafe.copyToClipboard(uri));
-            box.getChildren().addAll(
-                    new Label(Messages.get("admin.users.dialog.totp.instruction")),
-                    sLbl, new Label("otpauth URI"), uriField, new HBox(8, copyBtn, copyUriBtn));
-            box.setPrefWidth(480);
+
+            TextField testCodeField = new TextField();
+            testCodeField.setPromptText("Enter 6-digit code from Authenticator app");
+            testCodeField.setPrefWidth(220);
+            Label testResultLbl = new Label("");
+            testResultLbl.setWrapText(true);
+            Button testBtn = new Button("Test 6-Digit Code");
+            testBtn.getStyleClass().add("btn-secondary");
+            testBtn.setOnAction(e -> {
+                String code = testCodeField.getText() != null ? testCodeField.getText().trim() : "";
+                if (TotpUtil.verifyCode(secret, code)) {
+                    testResultLbl.setText("Verified! Your Authenticator app matches.");
+                    testResultLbl.setStyle("-fx-text-fill: #096B67; -fx-font-weight: bold;");
+                } else {
+                    testResultLbl.setText("Code did not match. Wait for the next 30s code or verify manual setup key.");
+                    testResultLbl.setStyle("-fx-text-fill: #BA2A1A; -fx-font-weight: bold;");
+                }
+            });
+
+            VBox box = new VBox(10,
+                    instr,
+                    qrFrame,
+                    sLbl,
+                    new Label("otpauth:// URI"),
+                    uriField,
+                    new HBox(8, copyBtn, copyUriBtn),
+                    new Label("Optional Check: Test your Authenticator code before enabling MFA"),
+                    new HBox(8, testCodeField, testBtn),
+                    testResultLbl);
+            box.setPrefWidth(500);
 
             Dialog<ButtonType> dialog = UiSafe.createDialog(UiSafe.windowOf(this),
                     Messages.get("admin.users.dialog.totp.title"),
@@ -493,6 +545,16 @@ public final class UserManagementPanel extends VBox {
                 return "TOTP 2FA enabled for '" + u.username() + "'.";
             });
         }
+    }
+
+    private static String formatBase32Groups(String secret) {
+        if (secret == null) return "";
+        StringBuilder sb = new StringBuilder(secret.length() + secret.length() / 4);
+        for (int i = 0; i < secret.length(); i++) {
+            if (i > 0 && i % 4 == 0) sb.append(' ');
+            sb.append(secret.charAt(i));
+        }
+        return sb.toString();
     }
 
     private void handleTrustAllDevices(UserAccount target) {

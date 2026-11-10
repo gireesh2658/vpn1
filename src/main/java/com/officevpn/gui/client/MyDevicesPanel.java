@@ -66,16 +66,7 @@ public final class MyDevicesPanel extends VBox {
                 r -> "ENFORCED".equals(r.trustBadge()) || "ACTIVE".equals(r.trustBadge()) ? "pill-success" : "pill-info", 145), 130, 155));
         VBox.setVgrow(table, Priority.ALWAYS);
 
-        List<IdentityPropertyRow> rows = List.of(
-                new IdentityPropertyRow("Authenticated Account", UiSafe.text(engine.getUsername(), 64), "ACTIVE"),
-                new IdentityPropertyRow("Assigned Department", engine.getDepartment() != null ? engine.getDepartment().name() : "-", "ENFORCED"),
-                new IdentityPropertyRow("Assigned Role", engine.getRole() != null ? engine.getRole().name() : "-", "ENFORCED"),
-                new IdentityPropertyRow("Virtual Tunnel IP", UiSafe.text(engine.getAssignedVirtualIp(), 32), "ACTIVE"),
-                new IdentityPropertyRow("Authentic Device Name", UiSafe.text(HardwareUtil.getAuthenticDeviceName(), 128), "VERIFIED"),
-                new IdentityPropertyRow("Hardware SHA-256 Fingerprint", fp, "VERIFIED"),
-                new IdentityPropertyRow("Account Device Enrollment Cap", ConfigUtil.getMaxDevicesPerUser() + " authorized hardware device(s)", "ENFORCED"),
-                new IdentityPropertyRow("Pinned Gateway Fingerprint", UiSafe.text(engine.getServerFingerprint(), 128), "TOFU PINNED")
-        );
+        List<IdentityPropertyRow> rows = buildRows();
         table.getItems().setAll(rows);
 
         VBox card = new VBox(12, table);
@@ -83,5 +74,33 @@ public final class MyDevicesPanel extends VBox {
         VBox.setVgrow(card, Priority.ALWAYS);
 
         getChildren().addAll(header, card);
+    }
+
+    /**
+     * Refreshes local hardware identity and active session attributes after login/disconnect.
+     */
+    public void refresh() {
+        table.getItems().setAll(buildRows());
+    }
+
+    private List<IdentityPropertyRow> buildRows() {
+        String fp = HardwareUtil.getAuthenticHardwareFingerprint();
+        boolean authed = engine != null && engine.isConnected() && engine.isAuthenticated();
+        String userVal = authed ? UiSafe.text(engine.getUsername(), 64) : "Not signed in";
+        String deptVal = authed && engine.getDepartment() != null ? engine.getDepartment().name() : "-";
+        String roleVal = authed && engine.getRole() != null ? engine.getRole().name() : "-";
+        String vipVal = authed ? UiSafe.text(engine.getAssignedVirtualIp(), 32) : "0.0.0.0";
+        String gwFp = (engine != null && engine.getServerFingerprint() != null && !engine.getServerFingerprint().isBlank())
+                ? UiSafe.text(engine.getServerFingerprint(), 128) : "Not connected";
+        return List.of(
+                new IdentityPropertyRow("Authenticated Account", userVal, authed ? "ACTIVE" : "OFFLINE"),
+                new IdentityPropertyRow("Assigned Department", deptVal, authed ? "ENFORCED" : "OFFLINE"),
+                new IdentityPropertyRow("Assigned Role", roleVal, authed ? "ENFORCED" : "OFFLINE"),
+                new IdentityPropertyRow("Virtual Tunnel IP", vipVal, authed ? "ACTIVE" : "OFFLINE"),
+                new IdentityPropertyRow("Authentic Device Name", UiSafe.text(HardwareUtil.getAuthenticDeviceName(), 128), "VERIFIED"),
+                new IdentityPropertyRow("Hardware SHA-256 Fingerprint", fp, "VERIFIED"),
+                new IdentityPropertyRow("Account Device Enrollment Cap", ConfigUtil.getMaxDevicesPerUser() + " authorized hardware device(s)", "ENFORCED"),
+                new IdentityPropertyRow("Pinned Gateway Fingerprint", gwFp, (engine != null && engine.getServerFingerprint() != null) ? "TOFU PINNED" : "PENDING")
+        );
     }
 }

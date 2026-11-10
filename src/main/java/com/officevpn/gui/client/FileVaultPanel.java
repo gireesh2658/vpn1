@@ -22,6 +22,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -45,6 +46,36 @@ public final class FileVaultPanel extends VBox {
         setSpacing(14);
         setPadding(new Insets(18));
         buildUi();
+        syncAuthState();
+    }
+
+    /**
+     * Synchronizes department selector, RBAC pill, and button state with current VPN authentication.
+     */
+    public void syncAuthState() {
+        boolean authed = engine != null && engine.isConnected() && engine.isAuthenticated();
+        rbacPill.getStyleClass().removeAll("pill-warning", "pill-info", "pill-muted");
+        if (!authed) {
+            vaultSelector.setDisable(true);
+            if (refreshButton != null) refreshButton.setDisable(true);
+            if (uploadButton != null) uploadButton.setDisable(true);
+            if (downloadButton != null) downloadButton.setDisable(true);
+            table.getItems().clear();
+            rbacPill.setText("SIGN IN REQUIRED");
+            rbacPill.getStyleClass().add("pill-muted");
+            statusLabel.setText("Sign in to a gateway on Home to browse, upload, and decrypt departmental vault files.");
+            return;
+        }
+        boolean isHqAdmin = engine.getRole() == Role.ADMIN && engine.getDepartment() == Department.HEADQUARTERS;
+        vaultSelector.getItems().setAll(isHqAdmin
+                ? List.of(Department.values())
+                : (engine.getDepartment() != null ? List.of(engine.getDepartment()) : List.of(Department.values())));
+        vaultSelector.setValue(engine.getDepartment() != null ? engine.getDepartment() : Department.IT);
+        vaultSelector.setDisable(false);
+        if (refreshButton != null) refreshButton.setDisable(false);
+        if (uploadButton != null) uploadButton.setDisable(false);
+        rbacPill.setText(isHqAdmin ? Messages.get("vault.rbac.admin") : Messages.format("vault.rbac.locked", engine.getDepartment()));
+        rbacPill.getStyleClass().add(isHqAdmin ? "pill-warning" : "pill-info");
         refreshFiles();
     }
 

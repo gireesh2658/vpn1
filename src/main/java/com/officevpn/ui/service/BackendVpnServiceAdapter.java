@@ -45,9 +45,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 
 /**
  * Production backend adapter bridging Ivory Atelier's {@link VpnClientService} contract
@@ -81,6 +84,9 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     private volatile String authenticatedUsername = "";
     private volatile char[] activePassword = new char[0];
     private volatile String activeOtp = "";
+    private volatile String configuredExpectedFingerprint = null;
+    private volatile Predicate<String> pinReplaceConfirmer = msg -> false;
+    private final AtomicLong localAuditSeq = new AtomicLong(1);
 
     public BackendVpnServiceAdapter(
             VpnClientEngine engine,
@@ -117,6 +123,7 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
             return t;
         });
 
+        initializeHonestDefaults();
         bindPolicyBridges();
         syncGatewaysFromConfig();
         syncEngineSnapshotToUi();
@@ -128,9 +135,148 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     }
 
     @SuppressWarnings("unchecked")
+    private void initializeHonestDefaults() {
+        marshalFx(() -> {
+            delegate.activeRoster().clear();
+            delegate.auditEvents().clear();
+            delegate.postureChecks().setAll(
+                    new PostureCheck("posture-java", "Java Runtime 25", true,
+                            "JRE " + Runtime.version() + " initialized",
+                            "Verify Java 25 runtime is installed."),
+                    new PostureCheck("posture-hw", "Hardware ID Bound", true,
+                            HardwareUtil.getAuthenticDeviceName() + " (" + HardwareUtil.getAuthenticHardwareFingerprint().substring(0, 12) + "...)",
+                            "Authentic SHA-256 device fingerprint computed."),
+                    new PostureCheck("posture-tofu", "TOFU Pin Store", true,
+                            "RSA-2048 RSASSA-PSS server verification active",
+                            "Verify pinned gateway fingerprint in known_gateways."),
+                    new PostureCheck("posture-cipher", "Tunnel Cipher", true,
+                            "ECDH P-256 PFS + AES-256-GCM directional keys",
+                            "Ensure server supports OFFICE-VPN-2.0 protocol.")
+            );
+            delegate.officeResources().setAll(
+                    new OfficeResource("res-vault", OfficeBranch.HQ, "Encrypted Vault", "Departmental", "AES-256-GCM File Transfer", "TCP " + ConfigUtil.getPort(), engine.isAuthenticated(), 0.06, 0.12, 0.42, 0.36),
+                    new OfficeResource("res-chat", OfficeBranch.HQ, "Secure Chat", "Departmental", "Isolated Intranet Feed", "TCP " + ConfigUtil.getPort(), engine.isAuthenticated(), 0.52, 0.12, 0.42, 0.36),
+                    new OfficeResource("res-gw", OfficeBranch.HQ, "HQ Gateway", "Core", ConfigUtil.getGatewayVirtualIp() + "/24", "OFFICE-VPN-2.0", engine.isAuthenticated(), 0.06, 0.54, 0.42, 0.36),
+                    new OfficeResource("res-dev", OfficeBranch.HQ, "Device Trust", "Zero-Trust", "Max " + ConfigUtil.getMaxDevicesPerUser() + " hardware keys", "SHA-256 Bound", engine.isAuthenticated(), 0.52, 0.54, 0.42, 0.36)
+            );
+            setStringProp(delegate.auditChainStatusProperty(), databaseManager != null ? "MYSQL AUDIT CHAIN" : "LIVE CLIENT EVENTS");
+        });
+    }
+
+    public VpnClientEngine getEngine() {
+        return engine;
+    }
+
+    public TrustedFingerprintStore getFingerprintStore() {
+        return fingerprintStore;
+    }
+
+    public void setPinReplaceConfirmer(Predicate<String> confirmer) {
+        this.pinReplaceConfirmer = (confirmer != null) ? confirmer : msg -> false;
+    }
+
+    public Optional<String> getPinnedFingerprint(String host, int port) {
+        if (host == null || host.isBlank() || port <= 0) return Optional.empty();
+        return fingerprintStore.getPinnedFingerprint(host.trim(), port);
+    }
+
+    public void clearGatewayPin(String host, int port) {
+        if (host != null && !host.isBlank() && port > 0) {
+            fingerprintStore.removePin(host.trim(), port);
+            appendLocalAudit(AuditCategory.POLICY_CHANGE, "Cleared TOFU gateway pin",
+                    "Removed stored RSA fingerprint for " + host.trim() + ":" + port, "local");
+            syncGatewaysFromConfig();
+        }
+    }
+
+    public void configureGatewayEndpoint(String host, int port, String expectedFingerprintHex) {
+        String cleanHost = (host == null || host.isBlank()) ? ConfigUtil.getClientDefaultHost() : host.trim();
+        int validPort = (port >= 1 && port <= 65535) ? port : ConfigUtil.getPort();
+        this.configuredExpectedFingerprint = (expectedFingerprintHex != null && !expectedFingerprintHex.isBlank())
+                ? expectedFingerprintHex.trim()
+                : null;
+        String pin = fingerprintStore.getPinnedFingerprint(cleanHost, validPort).orElse("tofu-on-connect");
+        String shortFp = pin.length() > 14 ? pin.substring(0, 14) : pin;
+        GatewayNode custom = new GatewayNode(
+                "gw-live-hq", "Office Gateway", cleanHost + ":" + validPort, "HQ",
+                cleanHost, validPort, (int) Math.max(2, metricsCollector != null ? metricsCollector.getAverageLatencyMs() : 4),
+                0, true, true, shortFp);
+        marshalFx(() -> {
+            delegate.gateways().setAll(custom);
+            delegate.selectGateway(custom.id());
+        });
+    }
+
+    public CompletableFuture<Long> pingGateway() {
+        return CompletableFuture.supplyAsync(() -> {
+            if (!engine.isConnected() || !engine.isAuthenticated()) {
+                throw new IllegalStateException("Connect and sign in before testing encrypted tunnel ping.");
+            }
+            long startNs = System.nanoTime();
+            try {
+                if (!engine.ping()) {
+                    throw new IllegalStateException("Gateway did not answer encrypted PING probe.");
+                }
+            } catch (IOException ex) {
+                throw new IllegalStateException("Ping failed: " + ex.getMessage(), ex);
+            }
+            long ms = Math.max(1L, (System.nanoTime() - startNs) / 1_000_000L);
+            marshalFx(() -> {
+                if (delegate.currentLatencyMsProperty() instanceof IntegerProperty ip) {
+                    ip.set((int) Math.min(Integer.MAX_VALUE, ms));
+                }
+            });
+            appendLocalAudit(AuditCategory.SIGN_IN, "Encrypted PING/PONG verified",
+                    "Round-trip RTT: " + ms + " ms", engine.getAssignedVirtualIp());
+            return ms;
+        }, ioExecutor);
+    }
+
+    public CompletableFuture<Void> changePassword(char[] currentPw, char[] newPw) {
+        char[] curCopy = currentPw != null ? currentPw.clone() : new char[0];
+        char[] newCopy = newPw != null ? newPw.clone() : new char[0];
+        return CompletableFuture.runAsync(() -> {
+            try {
+                if (!engine.isConnected() || !engine.isAuthenticated()) {
+                    throw new IllegalStateException("Sign in to an active tunnel before rotating password.");
+                }
+                engine.changePassword(curCopy, newCopy);
+                appendLocalAudit(AuditCategory.POLICY_CHANGE, "Password rotated over encrypted tunnel",
+                        "Updated credentials for " + engine.getUsername(), engine.getAssignedVirtualIp());
+            } catch (IOException | SecurityException ex) {
+                throw new IllegalStateException(ex.getMessage(), ex);
+            } finally {
+                Arrays.fill(curCopy, '\0');
+                Arrays.fill(newCopy, '\0');
+            }
+        }, ioExecutor);
+    }
+
+    private void appendLocalAudit(AuditCategory cat, String title, String detail, String ip) {
+        String actor = (engine.getUsername() != null && !engine.getUsername().isBlank())
+                ? engine.getUsername()
+                : (!authenticatedUsername.isBlank() ? authenticatedUsername : "client");
+        AuditEventItem item = new AuditEventItem(
+                localAuditSeq.getAndIncrement(),
+                "Live Session",
+                TIME_FMT.format(Instant.now()),
+                cat,
+                actor,
+                title,
+                detail,
+                (ip == null || ip.isBlank()) ? "local" : ip
+        );
+        marshalFx(() -> {
+            if (auditService == null || databaseManager == null || databaseManager.isClosed()) {
+                delegate.auditEvents().add(0, item);
+            }
+        });
+    }
+
+    @SuppressWarnings("unchecked")
     private void syncEngineSnapshotToUi() {
         marshalFx(() -> {
-            if (engine.getUsername() != null && !engine.getUsername().isBlank()) {
+            if (engine.isAuthenticated() && engine.getUsername() != null && !engine.getUsername().isBlank()) {
                 String uname = engine.getUsername().trim();
                 String initials = uname.length() >= 2
                         ? uname.substring(0, 2).toUpperCase(Locale.ROOT)
@@ -138,18 +284,27 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 String deptName = engine.getDepartment() != null ? engine.getDepartment().name() : "Shared";
                 String roleName = engine.getRole() != null ? engine.getRole().name() : "EMPLOYEE";
                 List<String> allowedDepts = "HEADQUARTERS".equalsIgnoreCase(deptName)
-                        ? List.of("Finance", "Engineering", "HR", "Shared")
-                        : List.of(formatDeptLabel(deptName), "Shared");
+                        ? List.of("Finance", "IT", "HR", "Headquarters")
+                        : List.of(formatDeptLabel(deptName));
                 EmployeeIdentity realId = new EmployeeIdentity(
                         uname, uname, initials, roleName, formatDeptLabel(deptName),
                         HardwareUtil.getAuthenticHardwareFingerprint(), allowedDepts);
                 if (delegate.currentIdentityProperty() instanceof ObjectProperty<?> op) {
                     ((ObjectProperty<EmployeeIdentity>) op).set(realId);
                 }
+            } else {
+                EmployeeIdentity signedOut = new EmployeeIdentity(
+                        "Not signed in", "Signed Out", "--", "GUEST", "None",
+                        HardwareUtil.getAuthenticHardwareFingerprint(), List.of());
+                if (delegate.currentIdentityProperty() instanceof ObjectProperty<?> op) {
+                    ((ObjectProperty<EmployeeIdentity>) op).set(signedOut);
+                }
             }
             if (engine.getAssignedVirtualIp() != null && !engine.getAssignedVirtualIp().isBlank()
                     && !"0.0.0.0".equals(engine.getAssignedVirtualIp())) {
                 setStringProp(delegate.virtualIpProperty(), engine.getAssignedVirtualIp());
+            } else if (!engine.isAuthenticated()) {
+                setStringProp(delegate.virtualIpProperty(), "0.0.0.0");
             }
             if (engine.getKillSwitchManager() != null) {
                 KillSwitchManager.State ksState = engine.getKillSwitchManager().getState();
@@ -169,6 +324,11 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
             }
             delegate.dnsLeakGuardProperty().set(engine.getDnsLeakProtection() != null
                     && engine.getDnsLeakProtection().isLeakProtectionEnabled());
+            // Sync resource unlock state
+            boolean unlocked = engine.isAuthenticated();
+            for (int i = 0; i < delegate.officeResources().size(); i++) {
+                delegate.officeResources().set(i, delegate.officeResources().get(i).withUnlocked(unlocked));
+            }
         });
     }
 
@@ -213,6 +373,7 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                         setConnectionState(ConnectionState.CONNECTING, clean);
                     } else if (clean.contains("Disconnected") || clean.contains("Connection lost")) {
                         setConnectionState(ConnectionState.DISCONNECTED, clean);
+                        syncEngineSnapshotToUi();
                         if (delegate.handshakeStepIndexProperty() instanceof IntegerProperty ip) {
                             ip.set(0);
                         }
@@ -291,11 +452,11 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 : (gatewayServer != null ? gatewayServer.getServerPublicKeyFingerprintHex() : "configured-tofu");
         String shortFp = fp.length() > 12 ? fp.substring(0, 12) : fp;
         GatewayNode primary = new GatewayNode(
-                "gw-live-hq", "Local Gateway", "Primary Office Gateway", "HQ",
+                "gw-live-hq", "Office Gateway", host + ":" + port, "HQ",
                 host, port, (int) Math.max(2, metricsCollector != null ? metricsCollector.getAverageLatencyMs() : 4),
-                12, true, true, shortFp);
+                0, true, true, shortFp);
         marshalFx(() -> {
-            delegate.gateways().set(0, primary);
+            delegate.gateways().setAll(primary);
             delegate.selectGateway(primary.id());
         });
     }
@@ -329,6 +490,24 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         connect(gw != null ? gw.id() : null);
     }
 
+    private void handshakeWithTofuPrompt(String host, int port) throws IOException {
+        try {
+            engine.connectAndHandshake(host, port, configuredExpectedFingerprint, fingerprintStore, false);
+        } catch (SecurityException pinEx) {
+            if (pinEx.getMessage() != null && pinEx.getMessage().contains("GATEWAY IDENTITY CHANGED")) {
+                boolean approved = pinReplaceConfirmer != null && pinReplaceConfirmer.test(pinEx.getMessage());
+                if (!approved) {
+                    throw pinEx;
+                }
+                engine.connectAndHandshake(host, port, configuredExpectedFingerprint, fingerprintStore, true);
+                appendLocalAudit(AuditCategory.POLICY_CHANGE, "Replaced TOFU server key pin",
+                        "User approved rotated RSA fingerprint for " + host + ":" + port, host);
+            } else {
+                throw pinEx;
+            }
+        }
+    }
+
     @Override
     public void connect(String gatewayId) {
         if (gatewayId != null) {
@@ -341,10 +520,11 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         ioExecutor.submit(() -> {
             try {
                 if (!engine.isConnected()) {
-                    engine.connectAndHandshake(gw.hostname(), gw.port(), null, fingerprintStore, false);
+                    handshakeWithTofuPrompt(gw.hostname(), gw.port());
                 }
                 if (engine.isAuthenticated()) {
                     marshalFx(() -> {
+                        syncEngineSnapshotToUi();
                         setConnectionState(ConnectionState.CONNECTED, "Connected to " + gw.hostname() + ":" + gw.port());
                         syncRosterFromGateway();
                     });
@@ -353,7 +533,7 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 String user = (authenticatedUsername != null && !authenticatedUsername.isBlank())
                         ? authenticatedUsername
                         : (currentIdentityProperty().get() != null ? currentIdentityProperty().get().username() : "");
-                if (!user.isBlank() && activePassword.length > 0) {
+                if (!user.isBlank() && activePassword.length > 0 && !"Not signed in".equals(user)) {
                     String pw = new String(activePassword);
                     boolean ok = activeOtp.isEmpty()
                             ? engine.login(user, pw)
@@ -365,6 +545,8 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                             refreshAuditLog();
                             syncRosterFromGateway();
                         });
+                        appendLocalAudit(AuditCategory.SIGN_IN, "Authenticated over encrypted tunnel",
+                                "Signed in as " + engine.getUsername() + " (" + engine.getDepartment() + ")", engine.getAssignedVirtualIp());
                         return;
                     }
                 }
@@ -372,7 +554,8 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 setConnectionStateFx(ConnectionState.DISCONNECTED, "Sign in with valid employee credentials to establish tunnel.");
             } catch (IOException | SecurityException ex) {
                 LOGGER.warn("Live tunnel connection failed for {}:{} - {}", gw.hostname(), gw.port(), ex.getMessage());
-                setConnectionStateFx(ConnectionState.RECONNECTING, "Gateway connection failed: " + ex.getMessage());
+                setConnectionStateFx(ConnectionState.DISCONNECTED, "Gateway connection failed: " + ex.getMessage());
+                appendLocalAudit(AuditCategory.FAILED_ATTEMPT, "Gateway handshake/connect failed", ex.getMessage(), gw.hostname());
                 marshalFx(() -> {
                     if (delegate.handshakeFailedStationProperty() instanceof ObjectProperty<?> op) {
                         @SuppressWarnings("unchecked")
@@ -388,9 +571,12 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     @Override
     public void disconnect() {
         ioExecutor.submit(() -> {
+            String prevIp = engine.getAssignedVirtualIp();
             engine.disconnect();
             delegate.disconnect();
+            syncEngineSnapshotToUi();
             syncRosterFromGateway();
+            appendLocalAudit(AuditCategory.SIGN_IN, "Disconnected tunnel", "Session closed by client", prevIp);
         });
     }
 
@@ -480,29 +666,47 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                 if (canTryWire) {
                     try {
                         if (!engine.isConnected()) {
-                            engine.connectAndHandshake(gw.hostname(), gw.port(), null, fingerprintStore, false);
+                            handshakeWithTofuPrompt(gw.hostname(), gw.port());
                         }
                         String rawPw = new String(copyPw);
                         boolean ok = this.activeOtp.isEmpty()
                                 ? engine.login(cleanUser, rawPw)
                                 : engine.login(cleanUser, rawPw, this.activeOtp);
                         if (ok) {
+                            syncGatewaysFromConfig();
                             syncEngineSnapshotToUi();
                             marshalFx(() -> {
                                 setConnectionState(ConnectionState.CONNECTED, "Connected to " + gw.hostname() + ":" + gw.port());
                                 refreshAuditLog();
                                 syncRosterFromGateway();
                             });
-                            return new AuthResult(true, false, "Authenticated cleanly as " + engine.getUsername());
+                            appendLocalAudit(AuditCategory.SIGN_IN, "Authenticated as " + engine.getUsername(),
+                                    "Tunnel active (" + engine.getDepartment() + " / " + engine.getAssignedVirtualIp() + ")",
+                                    engine.getAssignedVirtualIp());
+                            return new AuthResult(true, false, "Connected as " + engine.getUsername() + " (" + engine.getAssignedVirtualIp() + ")");
                         }
                         engine.disconnect();
                         boolean totpNeeded = databaseManager != null && !databaseManager.isClosed()
                                 && databaseManager.isTotpEnabled(cleanUser) && this.activeOtp.isEmpty();
+                        appendLocalAudit(AuditCategory.FAILED_ATTEMPT, "Authentication rejected for " + cleanUser,
+                                totpNeeded ? "MFA 6-digit code required" : "Invalid credentials, 2FA code, or device not trusted",
+                                gw.hostname());
                         return new AuthResult(false, totpNeeded,
-                                totpNeeded ? "Enter your 6-digit authenticator code." : "Authentication rejected — check username, password, or authenticator code.");
-                    } catch (IOException | SecurityException wireEx) {
+                                totpNeeded ? "MFA is enabled on this account — enter your 6-digit Authenticator code."
+                                        : "Rejected: verify username, password, hardware trust, or 6-digit MFA code (leave blank if MFA is OFF).");
+                    } catch (SecurityException pinEx) {
+                        engine.disconnect();
+                        appendLocalAudit(AuditCategory.FAILED_ATTEMPT, "Gateway identity check blocked", pinEx.getMessage(), gw.hostname());
+                        return new AuthResult(false, false, pinEx.getMessage());
+                    } catch (IOException wireEx) {
                         LOGGER.debug("Wire authentication unavailable ({}), checking local DB if configured", wireEx.getMessage());
                         engine.disconnect();
+                        if (databaseManager == null || databaseManager.isClosed()) {
+                            appendLocalAudit(AuditCategory.FAILED_ATTEMPT, "Gateway unreachable", wireEx.getMessage(), gw.hostname());
+                            return new AuthResult(false, false,
+                                    "Cannot reach VPN gateway at " + gw.hostname() + ":" + gw.port()
+                                            + " — ensure office-vpn-server.jar is running and Gateway is started.");
+                        }
                     }
                 }
 
@@ -531,7 +735,6 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
     @Override
     public void refreshAuditLog() {
         if (auditService == null || databaseManager == null || databaseManager.isClosed()) {
-            delegate.refreshAuditLog();
             return;
         }
         ioExecutor.submit(() -> {

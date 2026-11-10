@@ -356,6 +356,7 @@ public final class AdminDashboardFrame {
         atelierStage.setMinHeight(640);
         atelierStage.setScene(scene);
         atelierStage.setOnHidden(e -> {
+            shell.close();
             if (atelierService != null) {
                 atelierService.close();
                 atelierService = null;

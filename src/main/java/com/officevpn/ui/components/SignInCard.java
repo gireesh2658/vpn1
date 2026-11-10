@@ -25,8 +25,6 @@ import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 import org.kordamp.ikonli.feather.Feather;
@@ -111,7 +109,7 @@ public final class SignInCard extends Control {
             Label title = new Label("Sign in to Corporate Gateway");
             title.getStyleClass().add("ia-display-md");
 
-            Label sub = new Label("Authenticate workspace credentials and hardware OTP");
+            Label sub = new Label("Sign in with your Office VPN employee account");
             sub.getStyleClass().add("ia-subtitle");
 
             Label uLbl = new Label("Workspace Username");
@@ -122,11 +120,12 @@ public final class SignInCard extends Control {
             pLbl.getStyleClass().add("ia-section-label");
             passField.setPromptText("Account passphrase");
 
-            Label oLbl = new Label("6-Digit Authenticator OTP");
+            Label oLbl = new Label("6-Digit MFA Code (Optional)");
             oLbl.getStyleClass().add("ia-section-label");
 
             setupOtpCells();
 
+            feedbackLabel.setText("Leave the 6 digits blank if MFA is OFF for your account. Enter your Authenticator app code only if 2FA is enabled.");
             feedbackLabel.getStyleClass().add("ia-subtitle");
             feedbackLabel.setWrapText(true);
 
@@ -134,38 +133,7 @@ public final class SignInCard extends Control {
             signInBtn.setGraphic(Icons.ink(Feather.SHIELD, 14));
             signInBtn.setMaxWidth(Double.MAX_VALUE);
             signInBtn.setOnAction(e -> submitCredentials());
-
-            Button oktaBtn = new Button("Okta OIDC");
-            oktaBtn.setGraphic(Icons.lilac(Feather.KEY, 13));
-            oktaBtn.setMaxWidth(Double.MAX_VALUE);
-            HBox.setHgrow(oktaBtn, Priority.ALWAYS);
-            oktaBtn.setOnAction(e -> {
-                var sso = control.onSsoRequestedProperty().get();
-                if (sso != null) sso.accept("Okta Enterprise OIDC");
-            });
-
-            Button entraBtn = new Button("Microsoft Entra");
-            entraBtn.setGraphic(Icons.peacock(Feather.GLOBE, 13));
-            entraBtn.setMaxWidth(Double.MAX_VALUE);
-            HBox.setHgrow(entraBtn, Priority.ALWAYS);
-            entraBtn.setOnAction(e -> {
-                var sso = control.onSsoRequestedProperty().get();
-                if (sso != null) sso.accept("Microsoft Entra ID");
-            });
-
-            HBox divider = new HBox(8);
-            divider.setAlignment(Pos.CENTER);
-            Region r1 = new Region();
-            Region r2 = new Region();
-            r1.setPrefHeight(1); r1.setMaxHeight(1);
-            r2.setPrefHeight(1); r2.setMaxHeight(1);
-            r1.setStyle("-fx-background-color: #E6DCC6;"); r2.setStyle("-fx-background-color: #E6DCC6;");
-            HBox.setHgrow(r1, Priority.ALWAYS); HBox.setHgrow(r2, Priority.ALWAYS);
-            Label orLbl = new Label("OR ENTERPRISE SSO");
-            orLbl.getStyleClass().add("ia-section-label");
-            divider.getChildren().addAll(r1, orLbl, r2);
-
-            HBox ssoRow = new HBox(10, oktaBtn, entraBtn);
+            passField.setOnAction(e -> submitCredentials());
 
             root.getChildren().addAll(
                     badge, title, sub,
@@ -173,18 +141,16 @@ public final class SignInCard extends Control {
                     pLbl, passField,
                     oLbl, otpRow,
                     feedbackLabel,
-                    signInBtn,
-                    divider, ssoRow
+                    signInBtn
             );
             getChildren().add(root);
         }
 
         private void setupOtpCells() {
             otpRow.setAlignment(Pos.CENTER_LEFT);
-            String prefill = "123456";
             for (int i = 0; i < 6; i++) {
                 final int idx = i;
-                TextField cell = new TextField(String.valueOf(prefill.charAt(i)));
+                TextField cell = new TextField("");
                 cell.getStyleClass().add("otp-cell");
                 cell.setPrefSize(44, 48);
                 cell.setMinSize(36, 44);
@@ -301,7 +267,7 @@ public final class SignInCard extends Control {
     }
 
     /**
-     * Exposes programmatic error shake trigger for ComponentGallery / tests.
+     * Exposes programmatic error shake trigger for unit tests.
      */
     public void showErrorShake(String reason) {
         if (getSkin() instanceof SignInCardSkin skin) {

@@ -148,4 +148,19 @@ class AuthAndMfaSecurityTest {
         assertTrue(LegacyDemoCredentials.isLegacyPassword("Admin@2026!HQ"));
         assertFalse(LegacyDemoCredentials.isLegacyPassword("TrulyUnpredictablePassphrase2026#$"));
     }
+
+    @Test
+    @DisplayName("MFA QR Generator: Produces valid finder patterns and version bounds for otpauth URIs")
+    void testQrCodeGenerationForTotpUri() {
+        String uri = "otpauth://totp/OfficeVPN:alice_fin?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=OfficeVPN";
+        boolean[][] matrix = com.officevpn.security.QrCodeUtil.encode(uri);
+        int size = matrix.length;
+        assertTrue(size >= 37 && size <= 57, "Unexpected QR module dimension: " + size);
+        // Verify top-left, top-right, bottom-left 7x7 finder corners and (size-8, 8) dark module
+        assertTrue(matrix[0][0] && matrix[0][6] && matrix[6][0] && matrix[6][6] && matrix[3][3]);
+        assertTrue(matrix[0][size - 1] && matrix[0][size - 7] && matrix[3][size - 4]);
+        assertTrue(matrix[size - 1][0] && matrix[size - 7][0] && matrix[size - 4][3]);
+        assertTrue(matrix[size - 8][8]);
+        assertThrows(IllegalArgumentException.class, () -> com.officevpn.security.QrCodeUtil.encode("x".repeat(300)));
+    }
 }

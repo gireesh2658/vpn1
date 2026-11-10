@@ -27,11 +27,11 @@ An application-level zero-trust encrypted intranet gateway and departmental acce
 | **Directional Key Isolation** | **Implemented** | HKDF-SHA256 extracts independent `c2sKey` and `s2cKey` derived from the ECDH secret and transcript hash. |
 | **Anti-Replay Protection** | **Implemented** | 128-bit sliding bitmap sequence window and per-session IV tracking applied post-authentication. |
 | **Credential Security** | **Implemented** | PBKDF2WithHmacSHA256 with 600,000 iterations, 16-byte CSPRNG salt, and memory zeroization (`char[]` scrubbing). |
-| **Multi-Factor Auth (MFA)** | **Implemented** | RFC 6238 TOTP with constant-time equality check, step replay rejection, and progressive lockout counter. |
+| **Multi-Factor Auth (MFA)** | **Implemented** | Optional RFC 6238 TOTP (off by default; scannable QR code + Base32 enrollment & live verifier in Admin `Manage 2FA`, constant-time check, step replay rejection, lockout counter). |
 | **Device Trust & Quotas** | **Implemented** | Fail-closed device trust check; atomic auto-enrollment up to 3 devices per user in a single database transaction. |
 | **Departmental Isolation** | **Implemented** | Role-based vaults (`FINANCE`, `HR`, `IT`, `HEADQUARTERS`) with canonical path confinement (`Path.toRealPath(NOFOLLOW_LINKS)`). |
 | **Audit Logging** | **Implemented** | Forward-linked HMAC-SHA256 audit chaining with CRLF log injection neutralization. |
-| **Administrative & Client GUI** | **Implemented** | JavaFX 25 enterprise consoles (`AdminDashboardApp`, `VpnClientApp`), encrypted self-service **Change Password** & **Reconnect**, plus the **Ivory Atelier** light workspace (`-Dofficevpn.ui=atelier` / **Open Atelier View**). |
+| **Administrative & Client GUI** | **Implemented** | Unified light-editorial **Ivory Atelier** JavaFX 25 consoles (`AdminDashboardApp` and `VpnClientApp`) with File Vault, Secure Chat, Device Trust, Password Change, Ping Latency, and QR MFA enrollment. |
 | *Kernel TUN/TAP Driver* | *Future Scope* | Native OS virtual network adapter (`wintun.sys` / `/dev/net/tun`) for capturing full OS-level IP packets. |
 | *OS Firewall & Route Hooking* | *Future Scope* | System routing table manipulation (`route add`) and firewall automation via platform APIs. |
 
@@ -97,7 +97,7 @@ Client                                                              Server
 mvn clean verify -Pstrict -Djava.awt.headless=true
 ```
 *(In Windows PowerShell, quote `-D` flags: `mvn clean verify -Pstrict "-Djava.awt.headless=true"`.)*
-This compiles with `-Xlint:all -Werror`, executes all **28 JUnit 5 tests** across 9 test suites (including full end-to-end encrypted wire, MFA, vault, password rotation, device trust, RBAC authorization, and live Ivory Atelier adapter tests), and produces two shaded executable JARs in `target/`:
+This compiles with `-Xlint:all -Werror`, executes all **29 JUnit 5 tests** across 9 test suites (including full end-to-end encrypted wire, MFA, QR generation, vault, password rotation, device trust, RBAC authorization, and live Ivory Atelier adapter tests), and produces two shaded executable JARs in `target/`:
 - `target/office-vpn-server.jar`
 - `target/office-vpn-client.jar`
 
@@ -112,21 +112,17 @@ On first startup with an empty MySQL database (`office_vpn`), the server initial
    ```bash
    java -cp target/office-vpn-server.jar com.officevpn.server.VpnServer
    ```
-3. Launch the **VPN Client Portal**:
+3. Launch the **VPN Client Portal** (opens the unified **Ivory Atelier** workspace directly):
    ```bash
    java -jar target/office-vpn-client.jar
    ```
-   Or launch directly into the **Ivory Atelier** workspace (or switch anytime via **Open Atelier View**):
-   ```bash
-   java "-Dofficevpn.ui=atelier" -jar target/office-vpn-client.jar
-   ```
-   Or launch the **Interactive Console CLI** or **Ivory Atelier Component Gallery**:
+   Or launch the **Interactive Console CLI**:
    ```bash
    java -cp target/office-vpn-client.jar com.officevpn.client.ConsoleClient
-   java -cp target/office-vpn-client.jar com.officevpn.ui.ComponentGallery
    ```
 4. Create the initial Headquarters administrator username and a strong passphrase meeting policy requirements (min 12 characters with upper, lower, numeric, and symbol chars).
 5. Unlock or create the encrypted RSA-2048 identity keystore (`server_data/server_identity.key`) via `OFFICEVPN_KEYSTORE_PASS` or the interactive dialog.
+6. **Optional MFA (TOTP 2FA):** Leave the 6-digit MFA boxes empty unless an admin enabled TOTP 2FA on your account via **Users -> Manage 2FA** (which displays a scannable QR code for Google/Microsoft Authenticator plus a live test verifier).
 
 ---
 
@@ -158,7 +154,7 @@ office-vpn-system/
         |   |-- server/                  # Gateway server, ClientHandler, VirtualIpPool, VpnSession, VpnServer
         |   |-- storage/                 # Department file vaults with atomic writes and path traversal defense
         |   |-- tunnel/                  # Split tunneling and full tunneling engines
-        |   |-- ui/                      # Ivory Atelier component library, BackendVpnServiceAdapter, ComponentGallery
+        |   |-- ui/                      # Ivory Atelier unified client shell, components, BackendVpnServiceAdapter
         |   `-- util/                    # Authentic OS/network hardware telemetry
         `-- resources/
             |-- config.properties        # Centralized runtime, subnet, path, and MySQL configuration

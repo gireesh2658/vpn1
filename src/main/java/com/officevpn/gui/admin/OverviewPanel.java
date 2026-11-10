@@ -112,7 +112,7 @@ public final class OverviewPanel extends VBox {
         fpHeader.getChildren().addAll(fpTitle, fpSpacer, copyFingerprintButton);
 
         fingerprintLabel.getStyleClass().add("mono-text");
-        fingerprintLabel.setStyle("-fx-text-fill: #22d3ee; -fx-font-size: 13px; -fx-font-weight: bold;");
+        fingerprintLabel.setStyle("-fx-text-fill: #096B67; -fx-font-size: 13px; -fx-font-weight: bold;");
         fingerprintLabel.setWrapText(true);
 
         HBox runtimeStrip = new HBox(12);

@@ -63,8 +63,12 @@ public final class AdminLoginDialog {
         TextField totpField = new TextField();
         totpField.setPromptText(Messages.get("admin.login.prompt.totp"));
 
+        Label totpHint = new Label("Leave empty if TOTP 2FA is OFF for this admin. Required only after enabling 2FA in Users -> Manage 2FA.");
+        totpHint.getStyleClass().add("muted-label");
+        totpHint.setWrapText(true);
+
         Label errorLabel = new Label("");
-        errorLabel.setStyle("-fx-text-fill: #f87171; -fx-font-weight: bold;");
+        errorLabel.setStyle("-fx-text-fill: #BA2A1A; -fx-font-weight: bold;");
         errorLabel.setWrapText(true);
 
         VBox root = new VBox(14);
@@ -131,7 +135,7 @@ public final class AdminLoginDialog {
         VBox formCard = new VBox(10,
                 new Label(Messages.get("admin.dialog.label.adminUsername")), userField,
                 new Label(Messages.get("admin.dialog.label.passphrase")), passField,
-                new Label(Messages.get("admin.login.label.totp")), totpField,
+                new Label(Messages.get("admin.login.label.totp")), totpField, totpHint,
                 errorLabel
         );
         formCard.getStyleClass().add("card");

@@ -85,7 +85,7 @@ public final class AdminIdentityDialog {
         ephemeralCheck.setManaged(!exists);
 
         Label errorLabel = new Label("");
-        errorLabel.setStyle("-fx-text-fill: #f87171; -fx-font-weight: bold;");
+        errorLabel.setStyle("-fx-text-fill: #BA2A1A; -fx-font-weight: bold;");
         errorLabel.setWrapText(true);
 
         VBox form = new VBox(10);
