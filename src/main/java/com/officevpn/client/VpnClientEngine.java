@@ -122,9 +122,9 @@ public final class VpnClientEngine implements AutoCloseable {
 
     private final Options options;
 
-    private Socket socket;
-    private DataInputStream in;
-    private DataOutputStream out;
+    private volatile Socket socket;
+    private volatile DataInputStream in;
+    private volatile DataOutputStream out;
 
     private PublicKey serverPublicKey;
     private CryptoUtils.DirectionalKeys directionalKeys;
@@ -138,7 +138,7 @@ public final class VpnClientEngine implements AutoCloseable {
 
     private final List<ClientEventListener> listeners = new CopyOnWriteArrayList<>();
 
-    private Thread receiverThread;
+    private volatile Thread receiverThread;
     private ScheduledExecutorService keepAliveScheduler;
 
     private final AtomicBoolean connected = new AtomicBoolean(false);
@@ -244,15 +244,22 @@ public final class VpnClientEngine implements AutoCloseable {
         opLock.lock();
         try {
             Objects.requireNonNull(host, "Host cannot be null");
+            cleanupPreviousSessionLocked();
+            this.connected.set(false);
+            this.authenticated.set(false);
+            this.clientSendSeq.set(1);
+            this.clientInboundSeqWindow.reset();
+            this.pendingRequest.set(null);
             this.connectedHost = host.trim();
             this.connectedPort = port;
 
-            this.socket = new Socket();
-            this.socket.setTcpNoDelay(true);
-            this.socket.connect(new InetSocketAddress(host, port), options.getConnectTimeoutMs());
-            this.socket.setSoTimeout(30_000);
-            this.in = new DataInputStream(socket.getInputStream());
-            this.out = new DataOutputStream(socket.getOutputStream());
+            Socket newSocket = new Socket();
+            this.socket = newSocket;
+            newSocket.setTcpNoDelay(true);
+            newSocket.connect(new InetSocketAddress(host, port), options.getConnectTimeoutMs());
+            newSocket.setSoTimeout(30_000);
+            this.in = new DataInputStream(newSocket.getInputStream());
+            this.out = new DataOutputStream(newSocket.getOutputStream());
 
             notifyState("Connecting to VPN Gateway at " + host + ":" + port + "...");
 
@@ -398,16 +405,41 @@ public final class VpnClientEngine implements AutoCloseable {
             CryptoUtils.decryptPacket(confirmPacket, directionalKeys.s2cKey(), CryptoUtils.DIRECTION_S2C);
 
             this.connected.set(true);
-            this.socket.setSoTimeout(0); // Clear timeout for persistent listener thread
+            newSocket.setSoTimeout(0); // Clear timeout for persistent listener thread
 
-            // Start background receiver thread
-            this.receiverThread = new Thread(this::receiveLoop, "vpn-client-receiver");
-            this.receiverThread.setDaemon(true);
-            this.receiverThread.start();
+            DataInputStream sessionIn = this.in;
+            // Start background receiver thread bound explicitly to this session's socket/stream
+            Thread rxThread = new Thread(() -> receiveLoop(newSocket, sessionIn), "vpn-client-receiver");
+            rxThread.setDaemon(true);
+            this.receiverThread = rxThread;
+            rxThread.start();
 
             notifyState("Cryptographic handshake completed: Dual-Layer Tunnel Established (OFFICE-VPN-2.0 PFS ECDH).");
         } finally {
             opLock.unlock();
+        }
+    }
+
+    private void cleanupPreviousSessionLocked() {
+        stopKeepAlive();
+        Thread prevReceiver = this.receiverThread;
+        this.receiverThread = null;
+        Socket prevSocket = this.socket;
+        this.socket = null;
+        if (prevSocket != null && !prevSocket.isClosed()) {
+            try {
+                prevSocket.close();
+            } catch (IOException ex) {
+                LOGGER.debug("Ignoring previous socket cleanup failure: {}", ex.getMessage());
+            }
+        }
+        if (prevReceiver != null && prevReceiver != Thread.currentThread() && prevReceiver.isAlive()) {
+            prevReceiver.interrupt();
+            try {
+                prevReceiver.join(250);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
@@ -779,10 +811,10 @@ public final class VpnClientEngine implements AutoCloseable {
         }
     }
 
-    private void receiveLoop() {
-        while (isConnected() && socket != null && !socket.isClosed()) {
+    private void receiveLoop(Socket sessionSocket, DataInputStream sessionIn) {
+        while (isConnected() && this.socket == sessionSocket && !sessionSocket.isClosed()) {
             try {
-                VpnPacket packet = VpnPacket.readFromStream(in, isAuthenticated() ? VpnPacket.POST_AUTH : VpnPacket.PRE_AUTH);
+                VpnPacket packet = VpnPacket.readFromStream(sessionIn, isAuthenticated() ? VpnPacket.POST_AUTH : VpnPacket.PRE_AUTH);
                 notifyPacketSniffed(packet, "INCOMING");
 
                 // 1. Decrypt packet FIRST before sequence replay window check
@@ -828,7 +860,7 @@ public final class VpnClientEngine implements AutoCloseable {
                             reason = "Gateway requested disconnection";
                         }
                         notifyState("Tunnel disconnected: " + reason);
-                        disconnect();
+                        disconnect(sessionSocket);
                         break;
                     } else {
                         forgedDropped.incrementAndGet();
@@ -868,17 +900,20 @@ public final class VpnClientEngine implements AutoCloseable {
                     }
                 }
             } catch (IOException e) {
-                if (isConnected()) {
+                if (this.socket == sessionSocket && isConnected()) {
+                    boolean wasAuthenticated = isAuthenticated();
                     String safeReason = (e instanceof java.io.EOFException)
                             ? "Gateway closed connection (EOF)"
                             : (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
                     notifyState("Connection lost: " + safeReason);
-                    killSwitchManager.onTunnelDisconnectedUnexpectedly();
-                    dnsLeakProtection.setTunnelActive(false);
-                    if (autoReconnectManager.shouldReconnect()) {
-                        autoReconnectManager.recordFailure();
+                    if (wasAuthenticated) {
+                        killSwitchManager.onTunnelDisconnectedUnexpectedly();
+                        dnsLeakProtection.setTunnelActive(false);
+                        if (autoReconnectManager.shouldReconnect()) {
+                            autoReconnectManager.recordFailure();
+                        }
                     }
-                    disconnect();
+                    disconnect(sessionSocket);
                 }
                 break;
             } catch (Throwable t) {
@@ -984,6 +1019,13 @@ public final class VpnClientEngine implements AutoCloseable {
     }
 
     public void disconnect() {
+        disconnect(null);
+    }
+
+    private void disconnect(Socket expectedSocket) {
+        if (expectedSocket != null && this.socket != expectedSocket) {
+            return;
+        }
         if (!connected.getAndSet(false) && !authenticated.getAndSet(false)) {
             return;
         }
@@ -996,8 +1038,9 @@ public final class VpnClientEngine implements AutoCloseable {
             pending.future().completeExceptionally(new IOException("Connection closed"));
         }
 
+        Socket activeSocket = (expectedSocket != null) ? expectedSocket : this.socket;
         try {
-            if (directionalKeys != null && socket != null && !socket.isClosed() && out != null) {
+            if (directionalKeys != null && activeSocket != null && !activeSocket.isClosed() && out != null) {
                 Map<String, String> discMeta = new LinkedHashMap<>();
                 discMeta.put("seqNum", String.valueOf(getNextClientSendSeq()));
 
@@ -1013,15 +1056,16 @@ public final class VpnClientEngine implements AutoCloseable {
         }
 
         try {
-            if (socket != null && !socket.isClosed()) {
-                socket.close();
+            if (activeSocket != null && !activeSocket.isClosed()) {
+                activeSocket.close();
             }
         } catch (IOException ex) {
             LOGGER.debug("Ignoring socket close failure on disconnect: {}", ex.getMessage());
         }
 
-        if (receiverThread != null && receiverThread.isAlive()) {
-            receiverThread.interrupt();
+        Thread rx = this.receiverThread;
+        if (rx != null && rx != Thread.currentThread() && rx.isAlive()) {
+            rx.interrupt();
         }
 
         killSwitchManager.onCleanDisconnect();

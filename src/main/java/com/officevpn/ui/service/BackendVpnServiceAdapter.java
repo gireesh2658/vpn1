@@ -72,6 +72,7 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
 
     private VpnClientEngine.ClientEventListener engineListener;
     private KillSwitchManager.KillSwitchListener killSwitchListener;
+    private volatile String authenticatedUsername = "";
     private volatile char[] activePassword = new char[0];
     private volatile String activeOtp = "";
 
@@ -314,7 +315,9 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
                     });
                     return;
                 }
-                String user = currentIdentityProperty().get() != null ? currentIdentityProperty().get().username() : "";
+                String user = (authenticatedUsername != null && !authenticatedUsername.isBlank())
+                        ? authenticatedUsername
+                        : (currentIdentityProperty().get() != null ? currentIdentityProperty().get().username() : "");
                 if (!user.isBlank() && activePassword.length > 0) {
                     String pw = new String(activePassword);
                     boolean ok = activeOtp.isEmpty()
@@ -377,29 +380,86 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private void updateIdentityFromAccount(String username, String deptName, String roleName) {
+        if (username == null || username.isBlank()) return;
+        String cleanUser = username.trim();
+        String initials = cleanUser.length() >= 2
+                ? cleanUser.substring(0, 2).toUpperCase(Locale.ROOT)
+                : cleanUser.toUpperCase(Locale.ROOT);
+        List<String> allowedDepts = "HEADQUARTERS".equalsIgnoreCase(deptName)
+                ? List.of("Finance", "Engineering", "HR", "Shared")
+                : List.of(formatDeptLabel(deptName), "Shared");
+        EmployeeIdentity realId = new EmployeeIdentity(
+                cleanUser, cleanUser, initials, roleName, formatDeptLabel(deptName),
+                HardwareUtil.getAuthenticHardwareFingerprint(), allowedDepts);
+        marshalFx(() -> {
+            if (delegate.currentIdentityProperty() instanceof ObjectProperty<?> op) {
+                ((ObjectProperty<EmployeeIdentity>) op).set(realId);
+            }
+        });
+    }
+
     @Override
     public CompletableFuture<AuthResult> authenticate(String username, String password, String otpCode) {
+        String cleanUser = username != null ? username.trim() : "";
+        this.authenticatedUsername = cleanUser;
         Arrays.fill(this.activePassword, '\0');
         this.activePassword = password != null ? password.toCharArray() : new char[0];
         this.activeOtp = otpCode != null ? otpCode.trim() : "";
 
-        if (databaseManager == null || databaseManager.isClosed()) {
-            return delegate.authenticate(username, password, otpCode);
-        }
-
         return CompletableFuture.supplyAsync(() -> {
             char[] copyPw = this.activePassword.clone();
             try {
-                boolean totpRequired = databaseManager.isTotpEnabled(username);
+                if (cleanUser.isBlank() || copyPw.length == 0) {
+                    return new AuthResult(false, false, "Username and password are required.");
+                }
+                GatewayNode gw = delegate.selectedGatewayProperty().get();
+                boolean canTryWire = gw != null && (gatewayServer == null || gatewayServer.isRunning());
+                if (canTryWire) {
+                    try {
+                        if (!engine.isConnected()) {
+                            engine.connectAndHandshake(gw.hostname(), gw.port(), null, fingerprintStore, false);
+                        }
+                        String rawPw = new String(copyPw);
+                        boolean ok = this.activeOtp.isEmpty()
+                                ? engine.login(cleanUser, rawPw)
+                                : engine.login(cleanUser, rawPw, this.activeOtp);
+                        if (ok) {
+                            syncEngineSnapshotToUi();
+                            marshalFx(() -> {
+                                setConnectionState(ConnectionState.CONNECTED, "Connected to " + gw.hostname() + ":" + gw.port());
+                                refreshAuditLog();
+                                syncRosterFromGateway();
+                            });
+                            return new AuthResult(true, false, "Authenticated cleanly as " + engine.getUsername());
+                        }
+                        engine.disconnect();
+                        boolean totpNeeded = databaseManager != null && !databaseManager.isClosed()
+                                && databaseManager.isTotpEnabled(cleanUser) && this.activeOtp.isEmpty();
+                        return new AuthResult(false, totpNeeded,
+                                totpNeeded ? "Enter your 6-digit authenticator code." : "Authentication rejected — check username, password, or authenticator code.");
+                    } catch (IOException | SecurityException wireEx) {
+                        LOGGER.debug("Wire authentication unavailable ({}), checking local DB if configured", wireEx.getMessage());
+                        engine.disconnect();
+                    }
+                }
+
+                if (databaseManager == null || databaseManager.isClosed()) {
+                    return new AuthResult(false, false, "Gateway unreachable at " + (gw != null ? gw.hostname() + ":" + gw.port() : "configured host"));
+                }
+                boolean totpRequired = databaseManager.isTotpEnabled(cleanUser);
                 if (totpRequired && this.activeOtp.isEmpty()) {
                     return new AuthResult(false, true, "Enter your 6-digit authenticator code.");
                 }
                 UserAccount account = totpRequired
-                        ? databaseManager.authenticateUser(username, copyPw, this.activeOtp, "local")
-                        : databaseManager.authenticateUser(username, copyPw, "local");
+                        ? databaseManager.authenticateUser(cleanUser, copyPw, this.activeOtp, "local")
+                        : databaseManager.authenticateUser(cleanUser, copyPw, "local");
                 if (account == null) {
                     return new AuthResult(false, totpRequired, "Authentication rejected — check username, password, or authenticator code.");
                 }
+                this.authenticatedUsername = account.username();
+                updateIdentityFromAccount(account.username(), account.department().name(), account.role().name());
                 return new AuthResult(true, false, "Authenticated cleanly as " + account.username());
             } finally {
                 Arrays.fill(copyPw, '\0');
