@@ -4,7 +4,6 @@ import com.officevpn.db.DatabaseManager;
 import com.officevpn.model.Department;
 import com.officevpn.model.Role;
 
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -18,12 +17,6 @@ import java.util.Objects;
 public final class DemoSeeder {
 
     public static final String DEMO_FLAG_PROPERTY = "officevpn.demo";
-
-    // Alphabet excluding ambiguous characters: 0, O, 1, l, I
-    private static final String PASSWORD_ALPHABET =
-            "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
-
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     public record DemoAccount(String username, String password, Department department, Role role) {}
 
@@ -50,11 +43,11 @@ public final class DemoSeeder {
         }
 
         List<DemoAccount> created = new ArrayList<>();
-        created.add(createAccount(db, "admin_hq", "HQ#Pass2026!Master", Department.HEADQUARTERS, Role.ADMIN));
-        created.add(createAccount(db, "alice_fin", "Finance#SafePass2026!", Department.FINANCE, Role.EMPLOYEE));
-        created.add(createAccount(db, "bob_hr", "HR#SecurePass2026!", Department.HR, Role.EMPLOYEE));
-        created.add(createAccount(db, "charlie_it", "Tech#ShieldPass2026!", Department.IT, Role.EMPLOYEE));
-        created.add(createAccount(db, "david_auditor", "Audit#AccessPass2026!", Department.FINANCE, Role.AUDITOR));
+        created.add(createAccount(db, "admin_hq", PasswordPolicy.generateStrongPassword(16), Department.HEADQUARTERS, Role.ADMIN));
+        created.add(createAccount(db, "alice_fin", PasswordPolicy.generateStrongPassword(16), Department.FINANCE, Role.EMPLOYEE));
+        created.add(createAccount(db, "bob_hr", PasswordPolicy.generateStrongPassword(16), Department.HR, Role.EMPLOYEE));
+        created.add(createAccount(db, "charlie_it", PasswordPolicy.generateStrongPassword(16), Department.IT, Role.EMPLOYEE));
+        created.add(createAccount(db, "david_auditor", PasswordPolicy.generateStrongPassword(16), Department.FINANCE, Role.AUDITOR));
 
         return Collections.unmodifiableList(created);
     }
@@ -67,15 +60,6 @@ public final class DemoSeeder {
         } finally {
             java.util.Arrays.fill(pwChars, '\0');
         }
-    }
-
-    public static String generateRandomPassword(int length) {
-        StringBuilder sb = new StringBuilder(length);
-        for (int i = 0; i < length; i++) {
-            int index = SECURE_RANDOM.nextInt(PASSWORD_ALPHABET.length());
-            sb.append(PASSWORD_ALPHABET.charAt(index));
-        }
-        return sb.toString();
     }
 }
 

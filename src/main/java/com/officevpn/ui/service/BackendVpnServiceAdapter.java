@@ -75,7 +75,7 @@ public final class BackendVpnServiceAdapter implements VpnClientService {
         this.databaseManager = databaseManager;
         this.gatewayServer = gatewayServer;
         this.metricsCollector = databaseManager != null
-                ? new MetricsCollector(databaseManager, null, gatewayServer)
+                ? new MetricsCollector(databaseManager, gatewayServer)
                 : null;
         this.auditService = databaseManager != null ? new AuditService(databaseManager) : null;
         this.delegate = new MockVpnService(false);

@@ -1,7 +1,6 @@
 package com.officevpn.ui.components;
 
 import com.officevpn.ui.service.VpnClientService;
-import com.officevpn.ui.service.VpnModels.ConnectionState;
 import com.officevpn.ui.service.VpnModels.HandshakeStation;
 import com.officevpn.ui.theme.Fonts;
 import com.officevpn.ui.theme.Icons;

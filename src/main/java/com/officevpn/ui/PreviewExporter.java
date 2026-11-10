@@ -32,6 +32,8 @@ import javafx.scene.image.WritableImage;
 import javafx.scene.layout.StackPane;
 import javafx.scene.transform.Transform;
 import javafx.stage.Stage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -44,6 +46,7 @@ import java.nio.file.Path;
  */
 public final class PreviewExporter {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(PreviewExporter.class);
     private static Path outputDirectory = Path.of("docs/ui-previews");
 
     private PreviewExporter() {
@@ -61,9 +64,9 @@ public final class PreviewExporter {
         public void start(Stage primaryStage) {
             try {
                 int exported = exportAll(outputDirectory);
-                System.out.println("PreviewExporter completed cleanly: exported " + exported + " PNG files into " + outputDirectory.toAbsolutePath());
+                LOGGER.info("PreviewExporter completed cleanly: exported {} PNG files into {}", exported, outputDirectory.toAbsolutePath());
             } catch (Throwable t) {
-                t.printStackTrace();
+                LOGGER.error("PreviewExporter failed", t);
                 Platform.exit();
                 System.exit(1);
                 return;

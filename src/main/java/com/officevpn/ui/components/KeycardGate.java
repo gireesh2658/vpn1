@@ -1,6 +1,5 @@
 package com.officevpn.ui.components;
 
-import com.officevpn.ui.service.MockVpnService;
 import com.officevpn.ui.service.VpnClientService;
 import com.officevpn.ui.service.VpnModels.ConnectionState;
 import com.officevpn.ui.theme.Fonts;

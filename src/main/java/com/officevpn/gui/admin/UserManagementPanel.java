@@ -1,6 +1,5 @@
 package com.officevpn.gui.admin;
 
-import com.officevpn.admin.DemoSeeder;
 import com.officevpn.admin.PasswordPolicy;
 import com.officevpn.admin.UsernamePolicy;
 import com.officevpn.db.DatabaseManager;
@@ -247,7 +246,7 @@ public final class UserManagementPanel extends VBox {
         Button genBtn = new Button("Generate Strong Passphrase");
         genBtn.getStyleClass().add("btn-secondary");
         genBtn.setOnAction(e -> {
-            String generated = DemoSeeder.generateRandomPassword(16);
+            String generated = PasswordPolicy.generateStrongPassword(16);
             passField.setText(generated);
             genPreview.setText("Generated (copied): " + generated);
             UiSafe.copyToClipboard(generated);
@@ -316,7 +315,7 @@ public final class UserManagementPanel extends VBox {
         Button genBtn = new Button("Generate Strong Passphrase");
         genBtn.getStyleClass().add("btn-secondary");
         genBtn.setOnAction(e -> {
-            String generated = DemoSeeder.generateRandomPassword(16);
+            String generated = PasswordPolicy.generateStrongPassword(16);
             passField.setText(generated);
             genPreview.setText("Generated (copied): " + generated);
             UiSafe.copyToClipboard(generated);

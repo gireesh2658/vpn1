@@ -1,5 +1,8 @@
 package com.officevpn.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.nio.charset.StandardCharsets;
@@ -16,6 +19,8 @@ import java.util.Locale;
  */
 public final class HardwareUtil {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(HardwareUtil.class);
+
     private HardwareUtil() {}
 
     /**
@@ -29,7 +34,9 @@ public final class HardwareUtil {
             if (name != null && !name.isBlank() && !name.equalsIgnoreCase("localhost")) {
                 return name.trim();
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            LOGGER.debug("Falling back from InetAddress.getLocalHost() to env hostname: {}", ex.getMessage());
+        }
 
         String envComputer = System.getenv("COMPUTERNAME");
         if (envComputer != null && !envComputer.isBlank()) {
@@ -104,10 +111,5 @@ public final class HardwareUtil {
             int hash = Math.abs(fallback.hashCode());
             return "HW-" + String.format("%08X", hash) + "00000000";
         }
-    }
-
-    public static void main(String[] args) {
-        System.out.println("Authentic Device Name: " + getAuthenticDeviceName());
-        System.out.println("Authentic Hardware FP: " + getAuthenticHardwareFingerprint());
     }
 }

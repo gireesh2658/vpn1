@@ -133,13 +133,13 @@ public final class VpnServer implements AutoCloseable {
     }
 
     public static void printBanner(int port, String fingerprint) {
-        System.out.println("========================================================================");
-        System.out.println("       OFFICE VPN GATEWAY SERVER - ENTERPRISE ZERO TRUST                ");
-        System.out.println("       Runtime: Java " + System.getProperty("java.version") + " (JDK 25 LTS)             ");
-        System.out.println("       Listening Port: " + port + " (Gateway Virtual IP: 10.8.0.1)        ");
-        System.out.println("       Protocol: OFFICE-VPN-2.0 (AES-256-GCM + Ephemeral ECDH + RSASSA-PSS)");
-        System.out.println("       Server Key Fingerprint: " + fingerprint);
-        System.out.println("========================================================================");
+        LOGGER.info("========================================================================");
+        LOGGER.info("       OFFICE VPN GATEWAY SERVER - ENTERPRISE ZERO TRUST");
+        LOGGER.info("       Runtime: Java {} | Port: {} | Gateway Virtual IP: {}",
+                System.getProperty("java.version"), port, VirtualIpPool.GATEWAY_SERVER_IP);
+        LOGGER.info("       Protocol: OFFICE-VPN-2.0 (AES-256-GCM + Ephemeral ECDH + RSASSA-PSS)");
+        LOGGER.info("       Server Key Fingerprint: {}", fingerprint);
+        LOGGER.info("========================================================================");
     }
 
     public static void main(String[] args) {

@@ -14,6 +14,8 @@ import com.officevpn.storage.VaultManager;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.stage.Stage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.awt.GraphicsEnvironment;
 import java.nio.file.Path;
@@ -28,6 +30,8 @@ import java.util.concurrent.CompletableFuture;
  * a graphical display, and otherwise boots the JavaFX Enterprise Governance Suite.
  */
 public final class AdminDashboardApp {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(AdminDashboardApp.class);
 
     private AdminDashboardApp() {}
 
@@ -64,11 +68,7 @@ public final class AdminDashboardApp {
             List<DemoSeeder.DemoAccount> seededDemoAccounts = List.of();
             if (DemoSeeder.isDemoEnabled()) {
                 seededDemoAccounts = DemoSeeder.seed(db);
-                System.out.println("=== OFFICE VPN DEMO ACCOUNTS SEEDED ===");
-                for (DemoSeeder.DemoAccount acc : seededDemoAccounts) {
-                    System.out.printf("  %-14s | %-12s | %-8s | Password: %s%n",
-                            acc.username(), acc.department(), acc.role(), acc.password());
-                }
+                LOGGER.info("Demo mode enabled: seeded {} temporary account(s) for current session.", seededDemoAccounts.size());
             } else if (AdminBootstrap.needsBootstrap(db)) {
                 Optional<UserAccount> bootstrapped = AdminBootstrapDialog.showSetupDialog(null, db);
                 if (bootstrapped.isEmpty()) {
@@ -120,10 +120,18 @@ public final class AdminDashboardApp {
 
         private void closeQuietly() {
             if (gatewayServer != null) {
-                try { gatewayServer.stop(); } catch (Exception ignored) {}
+                try {
+                    gatewayServer.stop();
+                } catch (Exception ex) {
+                    LOGGER.debug("Ignoring error stopping gateway during shutdown: {}", ex.getMessage());
+                }
             }
             if (db != null) {
-                try { db.close(); } catch (Exception ignored) {}
+                try {
+                    db.close();
+                } catch (Exception ex) {
+                    LOGGER.debug("Ignoring error closing database pool during shutdown: {}", ex.getMessage());
+                }
             }
         }
     }

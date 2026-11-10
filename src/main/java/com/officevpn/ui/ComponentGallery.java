@@ -37,6 +37,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import org.kordamp.ikonli.feather.Feather;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -173,7 +174,7 @@ public final class ComponentGallery {
                 int count = PreviewExporter.exportAll(Path.of("docs/ui-previews"));
                 bExport.setText("Exported " + count + " PNGs");
             } catch (Exception ex) {
-                ex.printStackTrace();
+                LoggerFactory.getLogger(ComponentGallery.class).error("Failed to export Ivory Atelier preview PNGs", ex);
             }
         });
 

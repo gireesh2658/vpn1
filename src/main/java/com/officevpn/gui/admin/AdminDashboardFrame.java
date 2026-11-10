@@ -87,7 +87,7 @@ public final class AdminDashboardFrame {
         this.adminUsername = (adminUsername != null && !adminUsername.isBlank()) ? adminUsername : "admin_hq";
 
         this.serverManager = new ServerManager(gatewayServer);
-        this.metricsCollector = new MetricsCollector(db, null, gatewayServer);
+        this.metricsCollector = new MetricsCollector(db, gatewayServer);
         this.alertManager = new AlertManager(db);
         this.deviceManager = new DeviceManager(db);
         this.configManager = new ConfigManager(db, alertManager);

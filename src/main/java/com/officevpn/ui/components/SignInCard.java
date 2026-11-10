@@ -2,7 +2,6 @@ package com.officevpn.ui.components;
 
 import com.officevpn.ui.service.VpnClientService;
 import com.officevpn.ui.service.VpnModels.AuthResult;
-import com.officevpn.ui.theme.Fonts;
 import com.officevpn.ui.theme.Icons;
 import com.officevpn.ui.theme.Motion;
 import com.officevpn.ui.theme.Tokens;
@@ -13,7 +12,6 @@ import javafx.application.Platform;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.css.PseudoClass;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.AccessibleRole;
 import javafx.scene.Node;
